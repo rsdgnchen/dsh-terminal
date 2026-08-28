@@ -118,7 +118,7 @@ server → client:
 - 每标签 `{id, num, title}`：`id` 是**单调** React key（不复用）；`num`/`title` 编号**复用空闲最小正整数**（改 `nextNum(prev)`）。
 - 多标签**叠放**：`position:absolute; inset:0`，活动页 `visibility:visible; z-index:1`，其余 `visibility:hidden; z-index:0`（**保留尺寸**，切回不丢失、不重排）。
 
-## 5. ⚠ 踩坑记录
+## 5. 踩坑记录
 
 1. **`t` 变量遮蔽（已踩过）**：`setTabs((t) => [...t, { title: t('title') ... }])` 里的 updater 形参 `t` 会遮蔽 i18n 的 `t()`，导致 `t('title')` 把**数组**当函数调用 → `TypeError: t is not a function`，整个 overlay entry 被错误边界摘掉（终端+按钮一起消失，需刷新）。**修复：updater 形参命名 `prev` 等，避免 `t`。** 所有回调里凡是要用 i18n `t()` 的，形参都不要叫 `t`。
 
