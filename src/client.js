@@ -9,7 +9,7 @@
 //      不吃 sidebar / details）；
 //   2. 给 center 列加 padding-bottom = 终端高度，从而真正压缩对话区（上8下2）；
 //   3. xterm.js 按需加载（Host 提供的 vendor 静态文件），连 WebSocket 双向流式；
-//   4. 顶部拖拽条可调终端高度；底部停靠细条 打开/挂起/恢复。
+//   4. 顶部拖拽条可调终端高度；底部圆角 ❯_ 芯片 打开/挂起/恢复。
 // 面板状态（TerminalOverlay 本地态）：mounted=面板在 DOM（保留会话）；
 //   shown=面板可见。挂起(−)=shown=false 但保留会话；关闭(×)=卸载并杀全部会话。
 //
@@ -530,41 +530,39 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    // --- 打开终端按钮（对话区底部停靠细条，面板隐藏/挂起时可见） --------------
-    // 停靠在 center 列底部，作为「上下分区」的折叠/展开把手，而非可拖动的悬浮物。
+    // --- 打开终端按钮（对话区底部圆角小芯片，面板隐藏/挂起时可见） ------------
+    // 只保留 ❯_ 提示符，做成圆角、贴底的折叠/展开把手；不覆盖右侧滚动条。
     function FloatOpenButton(props) {
       const { metrics, onClick, minimized } = props
-      const barStyle = {
+      const chipStyle = {
         position: 'absolute',
-        bottom: 0,
-        left: metrics.sidebar,
-        right: (metrics.details + 14),   // 右侧留出滚动条区域，不压滚动条
-        height: 26,
+        bottom: 8,
+        left: (metrics.sidebar + 10),
         zIndex: 30,
         pointerEvents: 'auto',
-        display: 'flex',
+        display: 'inline-flex',
         alignItems: 'center',
-        justifyContent: 'flex-start',    // 文本靠左
-        gap: 8,
-        padding: '0 14px',
-        cursor: 'pointer',
-        background: 'var(--dsw-alias-bg-layer-1, rgba(128,128,128,.06))',
-        borderTop: '1px solid ' + (minimized ? 'rgba(210,153,34,.5)' : 'rgba(128,128,128,.25)'),
+        justifyContent: 'center',
+        height: 30,
+        padding: '0 12px',
+        borderRadius: 9,
+        border: '1px solid ' + (minimized ? 'rgba(210,153,34,.5)' : 'rgba(128,128,128,.3)'),
+        background: 'var(--dsw-alias-bg-base, #161b22)',
         color: minimized ? 'var(--dsw-alias-state-warn-primary, #d29922)' : 'var(--dsw-alias-label-secondary, #9aa0a6)',
+        cursor: 'pointer',
         fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
-        fontSize: 12,
-        lineHeight: '26px',
+        fontSize: 15,
+        fontWeight: 700,
+        lineHeight: 1,
+        boxShadow: '0 2px 8px rgba(0,0,0,.18)',
       }
       return React.createElement('button', {
         type: 'button',
         title: minimized ? t('restore') : t('open'),
         'aria-label': minimized ? t('restore') : t('open'),
         onClick: onClick,
-        style: barStyle,
-      }, [
-        React.createElement('span', { key: 'g', style: { fontWeight: 700, fontSize: 15, lineHeight: 1 } }, '❯_'),
-        React.createElement('span', { key: 'label', style: { fontSize: 12 } }, minimized ? t('restore') : t('open')),
-      ])
+        style: chipStyle,
+      }, '❯_')
     }
 
     // --- React 错误边界（防止单个渲染错误把整个 overlay 入口摘掉） ------------
