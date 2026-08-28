@@ -434,6 +434,34 @@ window.__ModuleLoader__.load({
         border: '1px solid ' + (on ? alpha(palette.accent, 0.5) : 'transparent'),
       })
 
+      // --- 双击重命名标签标题 ------------------------------------------------
+      const [editingId, setEditingId] = useState(null)
+      const [editText, setEditText] = useState('')
+      const editRef = useRef(null)
+
+      const startEdit = useCallback((id, current) => {
+        setEditingId(id)
+        setEditText(current)
+      }, [])
+
+      const commitEdit = useCallback(() => {
+        const id = editingId
+        const text = editText.trim()
+        if (id !== null) {
+          setTabs((prev) => prev.map((x) => (x.id === id ? { ...x, title: text || x.title } : x)))
+        }
+        setEditingId(null)
+      }, [editingId, editText])
+
+      const cancelEdit = useCallback(() => setEditingId(null), [])
+
+      useEffect(() => {
+        if (editingId !== null && editRef.current) {
+          editRef.current.focus()
+          editRef.current.select()
+        }
+      }, [editingId])
+
       return React.createElement('div', {
         style: {
           position: 'absolute',
@@ -459,11 +487,23 @@ window.__ModuleLoader__.load({
         // 标签栏
         React.createElement('div', { key: 'tabs', style: tabbarStyle }, [
           ...tabs.map((tab) => React.createElement('div', {
-            key: 'tab-' + tab.id, onClick: () => setActiveId(tab.id), title: tab.title, style: tabStyle(tab.id === activeId),
+            key: 'tab-' + tab.id, onClick: () => setActiveId(tab.id), title: editingId === tab.id ? undefined : tab.title, style: tabStyle(tab.id === activeId),
           }, [
             React.createElement('span', { key: 'label', style: { display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 } },
               React.createElement('span', { style: { width: 7, height: 7, borderRadius: '50%', background: '#3fb950', display: 'inline-block', flex: 'none' } }),
-              React.createElement('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, tab.title)),
+              editingId === tab.id
+                ? React.createElement('input', { ref: editRef, value: editText, onChange: (e) => setEditText(e.target.value),
+                    onKeyDown: (e) => { if (e.key === 'Enter') { e.stopPropagation(); commitEdit() } else if (e.key === 'Escape') { e.stopPropagation(); cancelEdit() } },
+                    onBlur: commitEdit,
+                    onClick: (e) => e.stopPropagation(),
+                    onDoubleClick: (e) => e.stopPropagation(),
+                    style: {
+                      width: 88, height: 20, padding: '0 6px', borderRadius: 4, border: '1px solid ' + alpha(palette.accent, 0.6),
+                      background: alpha(palette.bg, 1), color: palette.fg, fontSize: 12, lineHeight: '18px', outline: 'none', boxSizing: 'border-box',
+                    } })
+                : React.createElement('span', { title: '双击重命名', onClick: (e) => e.stopPropagation(),
+                    onDoubleClick: (e) => { e.stopPropagation(); startEdit(tab.id, tab.title) },
+                    style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'text' } }, tab.title)),
             React.createElement('button', { key: 'x', type: 'button', title: t('close'), onClick: (e) => { e.stopPropagation(); closeTab(tab.id) }, style: {
               border: 'none', background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: '16px', padding: '0 2px', opacity: 0.7, flex: 'none',
             } }, '×'),
