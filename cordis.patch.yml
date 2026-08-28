@@ -1,0 +1,6 @@
+# dsh-yaha-terminal bundle layer: inserts the web terminal plugin row.
+# Installed via `dsh plugin --profile <name> add file:<this-dir>`; the row id
+# stays stable so re-adds and profile patches can target it.
+- insert:
+    - id: dsh-yaha-terminal
+      name: '@yaha/dsh-terminal'
