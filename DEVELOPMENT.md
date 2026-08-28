@@ -141,7 +141,7 @@ server → client:
 
 ```bash
 # 1) 编辑源码后，同步到部署目录（服务器实际加载的位置）
-cp -r /home/yaha/dsh/dsh-terminal/* /home/yaha/.dsh/plugins/dsh-terminal/
+cp -r /home/yaha/dsh/plugins/dsh-terminal/* /home/yaha/.dsh/plugins/dsh-terminal/
 
 # 2) 若修改了 package.json / bundle 结构，需要重新 add：
 dsh plugin --profile web add file:/home/yaha/.dsh/plugins/dsh-terminal
