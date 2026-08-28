@@ -1,7 +1,7 @@
 // dsh-yaha-terminal — Web 终端插件（Client 半 / 浏览器）
 //
 // 在右侧 8 列内做一个上下 8/2 分区：上方 8 是对话区，下方 2 是系统交互终端。
-// 通过对话区底部右角的悬浮按钮弹出/隐藏（shell.overlay 的常驻浮标），支持：
+// 通过对话区底部停靠的细条按钮弹出/隐藏（shell.overlay 的常驻把手），支持：
 //   多终端标签页（每标签独立会话，切换 / 挂起不销毁）、拖拽调高、明暗自适应。
 // 终端本体是 shell.overlay 的一个 additive entry（不会替换任何现有内容）。
 // 打开时：
@@ -9,7 +9,7 @@
 //      不吃 sidebar / details）；
 //   2. 给 center 列加 padding-bottom = 终端高度，从而真正压缩对话区（上8下2）；
 //   3. xterm.js 按需加载（Host 提供的 vendor 静态文件），连 WebSocket 双向流式；
-//   4. 顶部拖拽条可调终端高度；底部右角按钮 打开/挂起/恢复。
+//   4. 顶部拖拽条可调终端高度；底部停靠细条 打开/挂起/恢复。
 // 面板状态（TerminalOverlay 本地态）：mounted=面板在 DOM（保留会话）；
 //   shown=面板可见。挂起(−)=shown=false 但保留会话；关闭(×)=卸载并杀全部会话。
 //
@@ -530,36 +530,41 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    // --- 悬浮打开按钮（对话区底部右角，面板隐藏/挂起时可见） ------------------
+    // --- 打开终端按钮（对话区底部停靠细条，面板隐藏/挂起时可见） --------------
+    // 停靠在 center 列底部，作为「上下分区」的折叠/展开把手，而非可拖动的悬浮物。
     function FloatOpenButton(props) {
       const { metrics, onClick, minimized } = props
+      const barStyle = {
+        position: 'absolute',
+        bottom: 0,
+        left: metrics.sidebar,
+        right: metrics.details,
+        height: 26,
+        zIndex: 30,
+        pointerEvents: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        padding: '0 12px',
+        cursor: 'pointer',
+        background: 'var(--dsw-alias-bg-layer-1, rgba(128,128,128,.06))',
+        borderTop: '1px solid ' + (minimized ? 'rgba(210,153,34,.5)' : 'rgba(128,128,128,.25)'),
+        color: minimized ? 'var(--dsw-alias-state-warn-primary, #d29922)' : 'var(--dsw-alias-label-secondary, #9aa0a6)',
+        fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
+        fontSize: 12,
+        lineHeight: '26px',
+      }
       return React.createElement('button', {
         type: 'button',
         title: minimized ? t('restore') : t('open'),
         'aria-label': minimized ? t('restore') : t('open'),
         onClick: onClick,
-        style: {
-          position: 'absolute',
-          bottom: 10,
-          right: (metrics.details + 32),
-          zIndex: 30,
-          pointerEvents: 'auto',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '4px 11px',
-          borderRadius: 8,
-          border: '1px solid ' + (minimized ? 'rgba(210,153,34,.5)' : 'rgba(128,128,128,.3)'),
-          background: 'var(--dsw-alias-bg-base, #161b22)',
-          color: minimized ? 'var(--dsw-alias-state-warn-primary, #d29922)' : 'var(--dsw-alias-label-secondary, #9aa0a6)',
-          cursor: 'pointer',
-          fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
-          fontSize: 15,
-          fontWeight: 700,
-          lineHeight: 1,
-          boxShadow: '0 2px 8px rgba(0,0,0,.25)',
-        },
-      }, '❯_')
+        style: barStyle,
+      }, [
+        React.createElement('span', { key: 'g', style: { fontWeight: 700, fontSize: 15, lineHeight: 1 } }, '❯_'),
+        React.createElement('span', { key: 'label', style: { fontSize: 12 } }, minimized ? t('restore') : t('open')),
+      ])
     }
 
     // --- React 错误边界（防止单个渲染错误把整个 overlay 入口摘掉） ------------
