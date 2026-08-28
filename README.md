@@ -35,6 +35,15 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 
 ## 安装
 
+> 前置条件：**需先安装 pnpm，并确保在 `PATH` 上**。`dsh plugin` 会把参数转发给 `pnpm`（在 profile 目录里管理依赖），没有 pnpm 会报 `dsh: pnpm not found on PATH`。
+> 安装 pnpm（任选其一）：
+> ```bash
+> corepack enable                 # 用 Node 自带的 corepack
+> # 或
+> npm install -g pnpm
+> ```
+> 装完确认 `pnpm --version` 可执行。
+
 在 web profile 里作为 bundle 加入（`file:` 指向插件目录）：
 
 ```bash
