@@ -92,11 +92,12 @@ server → client:
 
 | 状态 | `mounted` | `shown` | 效果 |
 |---|---|---|---|
-| 打开 | true | true | 面板可见；悬浮按钮隐藏 |
-| 挂起`−` | true | false | 面板 `display:none` 但**保留会话**；悬浮按钮＝恢复（黄点） |
+| 打开 | true | true | 面板可见；`❯_` 芯片隐藏 |
+| 挂起`−` | true | false | 面板 `display:none` 但**保留会话**；`❯_` 芯片＝恢复（绿色） |
 | 关闭`×` | false | false | 卸载面板，杀死全部会话 |
 
 - 压缩对话区：`shown && center` 时给 `center` 列设 `padding-bottom = H`，否则清空（`useEffect` 依赖 `[shown, H]`）。
+- 底部入口是 `FloatOpenButton`：一个**圆角 `❯_` 芯片**（`bottom:8; left:sidebar+10`，不压右侧滚动条）。挂起态绿色，正常态灰色/深色。
 
 ### 4.3 布局测量
 - `getOverlayLayer()` = `document.querySelector('[data-shell-overlay]')`；其 `.parentElement` 即 AppFrame。
@@ -117,6 +118,12 @@ server → client:
 ### 4.6 标签页
 - 每标签 `{id, num, title}`：`id` 是**单调** React key（不复用）；`num`/`title` 编号**复用空闲最小正整数**（改 `nextNum(prev)`）。
 - 多标签**叠放**：`position:absolute; inset:0`，活动页 `visibility:visible; z-index:1`，其余 `visibility:hidden; z-index:0`（**保留尺寸**，切回不丢失、不重排）。
+- **双击重命名**：`editingId / editText` + `startEdit/commitEdit/cancelEdit`；双击标题变 `<input>`（`useEffect` 聚焦+全选），`Enter`/失焦保存（`commitEdit` 只改 `title`，不动 `num`），`Esc` 取消。
+
+### 4.7 会话结束自动关闭
+- `TerminalView` 里 `handleEnded()`：收到 `{type:'exit'}` 或 WS `onclose` → 触发 `onExit(tabId)`（`onExitRef`）→ `TerminalPanel.handleExit(tabId)`。
+- `handleExit`：移除该标签；若已是最后一个标签则关闭整个面板（`onClose`），否则切到相邻标签。**不写任何「已退出/关闭」驻留提示。**
+- 注意用 `ended`/`disposed` 标志去重，避免 exit 与 onclose/卸载时重复触发。
 
 ## 5. 踩坑记录
 
