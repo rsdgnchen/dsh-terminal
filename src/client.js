@@ -538,15 +538,15 @@ window.__ModuleLoader__.load({
         position: 'absolute',
         bottom: 0,
         left: metrics.sidebar,
-        right: metrics.details,
+        right: (metrics.details + 14),   // 右侧留出滚动条区域，不压滚动条
         height: 26,
         zIndex: 30,
         pointerEvents: 'auto',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',    // 文本靠左
         gap: 8,
-        padding: '0 12px',
+        padding: '0 14px',
         cursor: 'pointer',
         background: 'var(--dsw-alias-bg-layer-1, rgba(128,128,128,.06))',
         borderTop: '1px solid ' + (minimized ? 'rgba(210,153,34,.5)' : 'rgba(128,128,128,.25)'),
