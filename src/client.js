@@ -77,6 +77,22 @@ window.__ModuleLoader__.load({
       })
     }
 
+    // --- 终端滚动条：默认透明，滚轮/触摸/悬停后显示，3 秒无操作自动隐藏 --------
+    const SCROLL_CSS =
+      '.xterm .xterm-viewport::-webkit-scrollbar{width:10px;height:10px}' +
+      '.xterm .xterm-viewport::-webkit-scrollbar-thumb{background:transparent}' +
+      '.xterm .xterm-viewport.yaha-scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45))}' +
+      '.xterm .xterm-viewport.yaha-scroll::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
+      '.xterm .xterm-viewport{scrollbar-width:thin;scrollbar-color:transparent transparent}' +
+      '.xterm .xterm-viewport.yaha-scroll{scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
+    if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@yaha/dsh-terminal/scrollbar"]')) {
+      const tag = document.createElement('style')
+      tag.dataset.plugin = '@yaha/dsh-terminal'
+      tag.dataset.pluginCss = '@yaha/dsh-terminal/scrollbar'
+      tag.textContent = SCROLL_CSS
+      document.head.appendChild(tag)
+    }
+
     // --- 自适应明暗（跟随应用主题，含系统跟随） -------------------------------
     // 应用的主题：ui-layout 的 presenter 在 body 上打 `data-ds-dark-theme`
     // 属性（dark 时存在），并把解析后的 --dsw-* 语义 token 写到 body.style。
@@ -244,6 +260,7 @@ window.__ModuleLoader__.load({
         let ws = null
         let term = null
         let fit = null
+        let scrollCleanup = null
         async function boot() {
           try {
             await loadXterm()
@@ -270,6 +287,32 @@ window.__ModuleLoader__.load({
             term.open(containerRef.current)
             termRef.current = term
             fitRef.current = fit
+
+            // 终端滚动条：滚轮/触摸/拖滚动条/悬停 时显示，3 秒无操作后自动隐藏。
+            const vp = containerRef.current.querySelector('.xterm-viewport')
+            if (vp) {
+              let hideTimer = null
+              const kick = () => {
+                vp.classList.add('yaha-scroll')
+                clearTimeout(hideTimer)
+                hideTimer = setTimeout(() => vp.classList.remove('yaha-scroll'), 3000)
+              }
+              vp.addEventListener('wheel', kick, { passive: true })
+              vp.addEventListener('touchstart', kick, { passive: true })
+              vp.addEventListener('touchmove', kick, { passive: true })
+              vp.addEventListener('mousedown', kick)
+              vp.addEventListener('pointerenter', kick)
+              kick()
+              scrollCleanup = () => {
+                clearTimeout(hideTimer)
+                vp.removeEventListener('wheel', kick)
+                vp.removeEventListener('touchstart', kick)
+                vp.removeEventListener('touchmove', kick)
+                vp.removeEventListener('mousedown', kick)
+                vp.removeEventListener('pointerenter', kick)
+                vp.classList.remove('yaha-scroll')
+              }
+            }
 
             const proto = location.protocol === 'https:' ? 'wss' : 'ws'
             ws = new WebSocket(proto + '://' + location.host + WS_PATH)
@@ -306,6 +349,7 @@ window.__ModuleLoader__.load({
         boot()
         return () => {
           disposed = true
+          if (scrollCleanup) { try { scrollCleanup() } catch { /* 忽略 */ } }
           if (ws) { try { ws.send(JSON.stringify({ type: 'kill' })) } catch {} ; try { ws.close() } catch {} }
           if (term) { try { term.dispose() } catch {} }
           termRef.current = null
