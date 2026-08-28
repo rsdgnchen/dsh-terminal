@@ -39,10 +39,10 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 
 ```bash
 # 以插件源码目录为准安装（推荐：源码 => ~/.dsh/plugins 下统一管理）
-dsh plugin --profile web add file:/home/yaha/.dsh/plugins/dsh-terminal
+dsh plugin --profile web add file:$HOME/.dsh/plugins/dsh-terminal
 ```
 
-> 若你从源码目录直接安装，也可 `dsh plugin --profile web add file:/home/yaha/dsh/dsh-terminal`。
+> 若你从源码目录直接安装，也可 `dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal`。
 
 安装后，profile 的 `package.json` 的 `dsh.profile.bundles` 会追加 `@yaha/dsh-terminal`，并把 `@yaha/dsh-terminal` 写入依赖。web 服务的 `cordis.patch.yml`（来自插件的 `cordis.patch.yml`）会插入一行：
 

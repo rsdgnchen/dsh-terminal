@@ -122,7 +122,7 @@ server → client:
 
 1. **`t` 变量遮蔽（已踩过）**：`setTabs((t) => [...t, { title: t('title') ... }])` 里的 updater 形参 `t` 会遮蔽 i18n 的 `t()`，导致 `t('title')` 把**数组**当函数调用 → `TypeError: t is not a function`，整个 overlay entry 被错误边界摘掉（终端+按钮一起消失，需刷新）。**修复：updater 形参命名 `prev` 等，避免 `t`。** 所有回调里凡是要用 i18n `t()` 的，形参都不要叫 `t`。
 
-2. **错误上报工具**：client 里有 `TerminalErrorBoundary`（class 组件）+ `window 'error'/'unhandledrejection'` → `fetch('/__yaha-terminal/error')`。排查 UI 组件消失类问题时，先看 Host 记录的 `/tmp/yaha-terminal-errors.log`。
+2. **错误上报工具**：client 里有 `TerminalErrorBoundary`（class 组件）+ `window 'error'/'unhandledrejection'` → `fetch('/__yaha-terminal/error')`。排查 UI 组件消失类问题时，先看 Host 记录的 `<tmpdir>/yaha-terminal-errors.log`。
 
 3. **隐藏标签不要用 `display:none`**：会让 xterm 容器塌成 0 尺寸；用 `visibility:hidden` 保尺寸。
 
@@ -141,10 +141,10 @@ server → client:
 
 ```bash
 # 1) 编辑源码后，同步到部署目录（服务器实际加载的位置）
-cp -r /home/yaha/dsh/plugins/dsh-terminal/* /home/yaha/.dsh/plugins/dsh-terminal/
+cp -r $HOME/dsh/plugins/dsh-terminal/* $HOME/.dsh/plugins/dsh-terminal/
 
 # 2) 若修改了 package.json / bundle 结构，需要重新 add：
-dsh plugin --profile web add file:/home/yaha/.dsh/plugins/dsh-terminal
+dsh plugin --profile web add file:$HOME/.dsh/plugins/dsh-terminal
 
 # 3) 生效（客户端 bundle 需在服务启动时重组）：
 pm2 restart dsh-web
