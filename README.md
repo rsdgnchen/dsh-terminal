@@ -50,8 +50,8 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 本插件已标注 GitHub **`dsh-plugin` 主题**（https://github.com/topics/dsh-plugin），也可在 `dsh-plugin-marketplace` 的 **Settings → Plugins → Plugin market** 里搜索并一键安装。
 
 ```bash
-# GitHub（推荐，无需发布 npm；把 <your-user> 换成你的 GitHub 用户名）
-dsh plugin --profile web add github:<your-user>/dsh-terminal
+# GitHub（推荐，无需发布 npm）
+dsh plugin --profile web add github:rsdgnchen/dsh-terminal
 
 # 或 npm（需先发布到 npm）
 dsh plugin --profile web add @yaha/dsh-terminal
