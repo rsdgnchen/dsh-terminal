@@ -126,6 +126,13 @@ server → client:
 - `handleExit`：移除该标签；若已是最后一个标签则关闭整个面板（`onClose`），否则切到相邻标签。**不写任何「已退出/关闭」驻留提示。**
 - 注意用 `ended`/`disposed` 标志去重，避免 exit 与 onclose/卸载时重复触发。
 
+### 4.8 键盘优先 & 自动聚焦
+- 目标：终端打开/切标签/挂起恢复时**自动聚焦**，让键盘以终端输入为准，避免 `Ctrl+C`/`Ctrl+U`/`Ctrl+W`/`Ctrl+A` 等被浏览器抢走。
+- 实现：`TerminalOverlay` 持 `kbdGrab`（默认 `true`），经 `TerminalPanel` 传给每个 `TerminalView` 的 `grabFocus`。`TerminalView` 用 `grabFocusRef`/`activeRef` 判断，在**初始化完成后**（boot 建好 term 后 `rAF` 聚焦）、**切到活动页**（`[active]` effect）、**尺寸变化/挂起恢复**（ResizeObserver）、**开关切换**（`[grabFocus]` effect）四处聚焦或 blur。
+- `kbdGrab=false` 时不抢占焦点（`[grabFocus]` effect 里 `term.blur()`），把键盘交还浏览器；点面板外区也会自然 blur。
+- 标签栏加了一个 `⌨` 开关按钮（`kbdGrab` 高亮 / 释放态灰），点击切换 `onToggleKbd`。
+- **限制**：`Ctrl+T/W/L`、`Cmd+W`、`F5/Ctrl+R`、`Ctrl+Shift+I` 等**窗口级**快捷键由浏览器 chrome 处理，页面不可拦截；`attachCustomKeyEventHandler` 也只能影响「能到达 xterm 的按键」。
+
 ## 5. 踩坑记录
 
 1. **`t` 变量遮蔽（已踩过）**：`setTabs((t) => [...t, { title: t('title') ... }])` 里的 updater 形参 `t` 会遮蔽 i18n 的 `t()`，导致 `t('title')` 把**数组**当函数调用 → `TypeError: t is not a function`，整个 overlay entry 被错误边界摘掉（终端+按钮一起消失，需刷新）。**修复：updater 形参命名 `prev` 等，避免 `t`。** 所有回调里凡是要用 i18n `t()` 的，形参都不要叫 `t`。

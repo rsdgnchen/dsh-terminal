@@ -44,6 +44,8 @@ window.__ModuleLoader__.load({
       'close': '关闭终端',
       'minimize': '挂起（保留会话）',
       'new': '新建终端',
+      'kbdGrab': '终端键盘优先（点按释放）',
+      'kbdRelease': '终端键盘已释放（点按接管）',
     }
     const enDict = {
       'open': 'Open terminal',
@@ -51,6 +53,8 @@ window.__ModuleLoader__.load({
       'close': 'Close terminal',
       'minimize': 'Suspend (keep session)',
       'new': 'New terminal',
+      'kbdGrab': 'Terminal keyboard priority (click to release)',
+      'kbdRelease': 'Terminal keyboard released (click to grab)',
     }
     function lang() {
       if (typeof navigator === 'undefined') return 'zh'
@@ -264,6 +268,12 @@ window.__ModuleLoader__.load({
     function TerminalView(props) {
       const palette = props.palette
       const active = props.active !== false
+      // 键盘优先：true=打开/激活/挂起恢复时自动聚焦终端（以终端输入为准）；
+      // false=不抢占焦点（默认把键盘留给浏览器，点击终端才输入）。
+      const grabFocusRef = useRef(props.grabFocus !== false)
+      grabFocusRef.current = props.grabFocus !== false
+      const activeRef = useRef(active)
+      activeRef.current = active
       const containerRef = useRef(null)
       const termRef = useRef(null)
       const fitRef = useRef(null)
@@ -315,6 +325,15 @@ window.__ModuleLoader__.load({
             term.open(containerRef.current)
             termRef.current = term
             fitRef.current = fit
+
+            // 首次打开/该标签刚建好时，若本页是活动页且键盘优先，则聚焦终端（可靠聚焦，
+            // 不再依赖容器 resize 顺带触发）。用 rAF 等一帧，让 fit 拿到真实尺寸。
+            if (grabFocusRef.current && activeRef.current) {
+              requestAnimationFrame(() => {
+                try { if (fit) fit.fit() } catch { /* 忽略 */ }
+                try { term.focus() } catch { /* 忽略 */ }
+              })
+            }
 
             // 终端滚动条：滚轮/触摸/拖滚动条/悬停 时显示，3 秒无操作后自动隐藏。
             const vp = containerRef.current.querySelector('.xterm-viewport')
@@ -392,7 +411,8 @@ window.__ModuleLoader__.load({
         if (term) term.options.theme = buildTermTheme(palette)
       }, [palette])
 
-      // 切换到本标签页时（尺寸变为有效）re-fit + 聚焦；隐藏标签页尺寸为 0 不触发。
+      // 切换到本标签页时（尺寸变为有效）re-fit；键盘优先时顺带聚焦。
+      // 隐藏标签页尺寸为 0 不触发。
       useEffect(() => {
         if (!active) return
         const fit = fitRef.current
@@ -400,12 +420,12 @@ window.__ModuleLoader__.load({
         if (!fit || !term) return
         const raf = requestAnimationFrame(() => {
           try { fit.fit() } catch { /* 忽略 */ }
-          try { term.focus() } catch { /* 忽略 */ }
+          if (grabFocusRef.current) { try { term.focus() } catch { /* 忽略 */ } }
         })
         return () => cancelAnimationFrame(raf)
       }, [active])
 
-      // 容器尺寸变化时 re-fit 并回传 resize
+      // 容器尺寸变化时 re-fit 并回传 resize；键盘优先时顺带聚焦（含挂起恢复）。
       useEffect(() => {
         const el = containerRef.current
         if (!el) return
@@ -413,11 +433,19 @@ window.__ModuleLoader__.load({
           const fit = fitRef.current
           const term = termRef.current
           if (fit && term) { try { fit.fit() } catch { /* 忽略 */ } }
-          if (term) { try { term.focus() } catch { /* 忽略 */ } }
+          if (grabFocusRef.current && term) { try { term.focus() } catch { /* 忽略 */ } }
         })
         ro.observe(el)
         return () => ro.disconnect()
       }, [])
+
+      // 键盘优先开关切换：开则聚焦（抢回），关则释放（把键盘交还浏览器）。
+      useEffect(() => {
+        const term = termRef.current
+        if (!term) return
+        if (grabFocusRef.current) { try { term.focus() } catch { /* 忽略 */ } }
+        else { try { term.blur() } catch { /* 忽略 */ } }
+      }, [props.grabFocus])
 
       return React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0, padding: '2px 4px 4px' } })
     }
@@ -426,7 +454,7 @@ window.__ModuleLoader__.load({
     // 支持多终端标签页：每个标签页一个独立 xterm + WebSocket + 宿主 PTY 会话，
     // 切换标签页不销毁会话（其他标签页容器隐藏但保持挂载），活动页 re-fit。
     function TerminalPanel(props) {
-      const { H, metrics, palette, onResize, onMinimize, onClose, hidden } = props
+      const { H, metrics, palette, onResize, onMinimize, onClose, hidden, kbdGrab, onToggleKbd } = props
       const [tabs, setTabs] = useState([{ id: 1, num: 1, title: 'Terminal 1' }])
       const [activeId, setActiveId] = useState(1)
       const nextIdRef = useRef(2)
@@ -593,6 +621,12 @@ window.__ModuleLoader__.load({
             border: '1px dashed ' + palette.border, background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0,
           } }, '+'),
           React.createElement('div', { key: 'spacer', style: { flex: '1 1 auto' } }),
+          React.createElement('button', { key: 'kbd', type: 'button', onClick: onToggleKbd, title: kbdGrab ? t('kbdGrab') : t('kbdRelease'), 'aria-label': kbdGrab ? t('kbdGrab') : t('kbdRelease'), style: {
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, flex: 'none', marginLeft: 2,
+            border: '1px solid ' + (kbdGrab ? alpha(palette.accent, 0.55) : 'transparent'),
+            background: kbdGrab ? alpha(palette.accent, 0.14) : 'transparent',
+            color: kbdGrab ? palette.accent : palette.fg2, cursor: 'pointer', fontSize: 12, lineHeight: '16px', padding: 0,
+          } }, '⌨'),
           React.createElement('button', { key: 'minimize', type: 'button', onClick: onMinimize, title: t('minimize'), 'aria-label': t('minimize'), style: {
             border: 'none', background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 15, lineHeight: '18px', padding: '0 4px', flex: 'none', marginLeft: 2,
           } }, '−'),
@@ -606,7 +640,7 @@ window.__ModuleLoader__.load({
             position: 'absolute', inset: 0,
             visibility: tab.id === activeId ? 'visible' : 'hidden',
             zIndex: tab.id === activeId ? 1 : 0,
-          } }, React.createElement(TerminalView, { palette, active: tab.id === activeId, onExit: () => handleExit(tab.id) })))),
+          } }, React.createElement(TerminalView, { palette, active: tab.id === activeId, grabFocus: kbdGrab, onExit: () => handleExit(tab.id) })))),
       ])
     }
 
@@ -772,6 +806,7 @@ window.__ModuleLoader__.load({
       const [mounted, setMounted] = useState(false)
       const [shown, setShown] = useState(false)
       const [H, setH] = useState(TERM_DEFAULT_H)
+      const [kbdGrab, setKbdGrab] = useState(true) // 键盘优先：终端打开即聚焦、以终端输入为准
 
       // 收起态常驻预留 HANDLE_STRIP_H 横条（不遮输出统计，统一预留也没有显隐跳动）；
       // 终端展开时改用面板高度 H 压缩对话区。
@@ -800,6 +835,8 @@ window.__ModuleLoader__.load({
           onMinimize: minimize,
           onClose: closePanel,
           hidden: !shown,
+          kbdGrab,
+          onToggleKbd: () => setKbdGrab((v) => !v),
         })) : null)
     }
 
