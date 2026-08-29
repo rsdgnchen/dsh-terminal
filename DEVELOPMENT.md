@@ -126,11 +126,11 @@ server → client:
 - `handleExit`：移除该标签；若已是最后一个标签则关闭整个面板（`onClose`），否则切到相邻标签。**不写任何「已退出/关闭」驻留提示。**
 - 注意用 `ended`/`disposed` 标志去重，避免 exit 与 onclose/卸载时重复触发。
 
-### 4.8 键盘优先 & 自动聚焦
+### 4.8 键盘接管（默认无需开关）
 - 目标：终端打开/切标签/挂起恢复时**自动聚焦**，让键盘以终端输入为准，避免 `Ctrl+C`/`Ctrl+U`/`Ctrl+W`/`Ctrl+A` 等被浏览器抢走。
-- 实现：`TerminalOverlay` 持 `kbdGrab`（默认 `true`），经 `TerminalPanel` 传给每个 `TerminalView` 的 `grabFocus`。`TerminalView` 用 `grabFocusRef`/`activeRef` 判断，在**初始化完成后**（boot 建好 term 后 `rAF` 聚焦）、**切到活动页**（`[active]` effect）、**尺寸变化/挂起恢复**（ResizeObserver）、**开关切换**（`[grabFocus]` effect）四处聚焦或 blur。
-- `kbdGrab=false` 时不抢占焦点（`[grabFocus]` effect 里 `term.blur()`），把键盘交还浏览器；点面板外区也会自然 blur。
-- 交互：**标签栏空白区双击**切换 `onToggleKbd`；终端**聚焦时**（`TerminalView` 在自身容器监听 `focusin/focusout`，经 `onFocusChange` 上报到 `TerminalPanel` 的 `kbdFocused`）右侧浮现一个**极简图钉 `📌`**，点击同样切换 `onToggleKbd`（未聚焦时 `opacity:0 + pointer-events:none`，保留占位避免布局跳动）。
+- 实现：`TerminalView` 在**初始化完成后**（boot 建好 term 后 `if (active)` 用 `rAF` 聚焦一次）、**切到活动页**（`[active]` effect）、**尺寸变化/挂起恢复**（ResizeObserver）三处 `term.focus()`。方案 B：**默认接管、不设开关**。
+- 释放/接管：无需代码——**点终端外面**自然 `blur`（键盘回浏览器），**点终端**或**重新打开/切换**即 `focus()` 接管。
+- 曾考虑过「开关按钮/图钉/双击」等形式，因与终端极简表头风格冲突、且双击命中不稳定而放弃，改为默认接管。
 - **限制**：`Ctrl+T/W/L`、`Cmd+W`、`F5/Ctrl+R`、`Ctrl+Shift+I` 等**窗口级**快捷键由浏览器 chrome 处理，页面不可拦截；`attachCustomKeyEventHandler` 也只能影响「能到达 xterm 的按键」。
 
 ## 5. 踩坑记录
