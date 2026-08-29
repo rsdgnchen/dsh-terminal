@@ -96,8 +96,8 @@ server → client:
 | 挂起`−` | true | false | 面板 `display:none` 但**保留会话**；底部横杠＝恢复（品牌色点亮） |
 | 关闭`×` | false | false | 卸载面板，杀死全部会话；底部横杠＝打开 |
 
-- 压缩对话区：给 `center` 列设 `padding-bottom = (shown ? H : (handleVisible ? HANDLE_STRIP_H : 0))`（`useEffect` 依赖 `[shown, H, handleVisible]`）——终端展开时用面板高度 H；收起态**只在底部横杠 `visible` 时**预留 `HANDLE_STRIP_H`（14px）横条（不挡输出统计），横杠淡出后置 0，避免常驻压短对话滚动条、让滚动条底部缺像素。
-- 底部入口是 `FloatOpenButton`：一根 **iOS 主屏指示条风格的半透明横杠**（`left=sidebar / right=details`，贴底部预留横条），**上滑**（或轻点/回车）**打开**终端；挂起态用品牌色点亮、普通态用次级文字色压暗。定位容器 `pointerEvents:none` 不拦截对话内容，只有横杠本体（156×14 触摸区）接收指针事件。为避免挡住 dsh 输出统计，**3 秒无操作自动淡出**（`opacity` + `pointerEvents:none`），光标靠近 frame 底部（`clientY ≥ rect.bottom - 56`）或与把手交互时重新亮起并重置计时；`visible` 经 `onVisibleChange` 上报给 `TerminalOverlay`，用于驱动上面的条件横条。
+- 压缩对话区：给 `center` 列设 `padding-bottom = (shown ? H : HANDLE_STRIP_H)`（`useEffect` 依赖 `[shown, H]`）——终端展开时用面板高度 H；收起态**常驻**预留 `HANDLE_STRIP_H`（8px）横条（不挡输出统计），常驻预留**没有显隐跳动**（对比此前「显时预留/隐时置 0」的条件做法）。该横条会让对话滚动容器略微变矮，故把对话消息滚动条改为**只显示滑块、透明轨道**（`CONV_SCROLL_CSS`，施加于 `.3f7G_scroll`），底部空隙不再露出「轨道缺失」。
+- 底部入口是 `FloatOpenButton`：一根 **iOS 主屏指示条风格的半透明横杠**（`left=sidebar / right=details`，位于底部预留横条内、离底边约 2px），**上滑**（或轻点/回车）**打开**终端；挂起态用品牌色点亮、普通态用次级文字色压暗。定位容器 `pointerEvents:none` 不拦截对话内容，只有横杠本体（156×5 触摸区）接收指针事件。为避免挡住 dsh 输出统计，**3 秒无操作自动淡出**（`opacity` + `pointerEvents:none`），光标靠近 frame 底部（`clientY ≥ rect.bottom - 56`）或与把手交互时重新亮起并重置计时。
 - **面板顶部小横杠（拖拽条）** = 拖动调高 + 点击收起：`onPointerDown` 里位移 `≤5px` 视为轻点，`onUp` 里未拖动则触发 `onMinimize()`（等同 `−`，保留会话）；超过 5px 才算拖动并 `onResize`。`title`/`aria-label` 提示「点击收起 · 拖动调整高度」。
 
 ### 4.3 布局测量

@@ -33,8 +33,9 @@ window.__ModuleLoader__.load({
     const TERM_MIN_H = 120
     const TERM_DEFAULT_H = 200
     const TERM_MAX_H = 520
-    // 给底部把手预留的常驻横条高度（让输出统计/内容盖不住把手，把手也不遮挡统计）。
-    const HANDLE_STRIP_H = 14
+    // 给底部把手预留的常驻横条高度：容纳「2px 下边距 + 5px 横杠 + 1px 余量」，
+    // 让输出统计/内容盖不住把手，把手也不遮挡统计。常驻预留从而没有显隐跳动。
+    const HANDLE_STRIP_H = 8
 
     // --- 文案 ---------------------------------------------------------------
     const zhDict = {
@@ -94,6 +95,23 @@ window.__ModuleLoader__.load({
       tag.dataset.plugin = '@yaha/dsh-terminal'
       tag.dataset.pluginCss = '@yaha/dsh-terminal/scrollbar'
       tag.textContent = SCROLL_CSS
+      document.head.appendChild(tag)
+    }
+
+    // --- 对话消息滚动条：只显示滑块、透明轨道（对齐 DeepSeek/Gemini 观感） -----
+    // 底部常驻横条会让对话滚动容器稍微变矮；轨道设为透明后，底部那点空隙不再
+    // 露出「轨道缺失」。目标为 dsh 对话消息滚动容器（.3f7G_scroll，`flex:auto; overflow-y:auto`）。
+    const CONV_SCROLL_CSS =
+      '.3f7G_scroll::-webkit-scrollbar{width:10px;height:10px}' +
+      '.3f7G_scroll::-webkit-scrollbar-track{background:transparent}' +
+      '.3f7G_scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45));border-radius:999px;background-clip:padding-box;border:2px solid transparent}' +
+      '.3f7G_scroll::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
+      '.3f7G_scroll{scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
+    if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@yaha/dsh-terminal/conv-scrollbar"]')) {
+      const tag = document.createElement('style')
+      tag.dataset.plugin = '@yaha/dsh-terminal'
+      tag.dataset.pluginCss = '@yaha/dsh-terminal/conv-scrollbar'
+      tag.textContent = CONV_SCROLL_CSS
       document.head.appendChild(tag)
     }
 
@@ -593,17 +611,12 @@ window.__ModuleLoader__.load({
     // 为避免挡住对话区底部的 dsh 输出统计：底部常驻 HANDLE_STRIP_H 横条放把手，
     // 把手 3 秒无操作自动淡出（同滚动条逻辑），光标靠近底部时重新亮起。
     function FloatOpenButton(props) {
-      const { metrics, palette, onClick, minimized, onVisibleChange } = props
+      const { metrics, palette, onClick, minimized } = props
       const [visible, setVisible] = useState(true)
       const [hovered, setHovered] = useState(false)
       const [pressed, setPressed] = useState(false)
       const down = useRef(null)
       const hideTimer = useRef(null)
-
-      // 把可见性上报给父级（用于只在把手显示时预留底部横条，避免常驻压短滚动条）。
-      useEffect(() => {
-        if (typeof onVisibleChange === 'function') onVisibleChange(visible)
-      }, [visible, onVisibleChange])
 
       // 亮起并把隐藏计时重置为 3 秒。
       const wake = useCallback(() => {
@@ -667,13 +680,13 @@ window.__ModuleLoader__.load({
           position: 'absolute',
           left: metrics.sidebar,
           right: metrics.details,
-          bottom: 0,
+          bottom: 2, // iOS 式：离屏幕底边约 2px
           zIndex: 30,
           pointerEvents: 'none', // 只做定位/居中，不拦截底下对话内容
           display: 'flex',
-          alignItems: 'flex-end',
+          alignItems: 'center',
           justifyContent: 'center',
-          height: HANDLE_STRIP_H, // 贴近底部预留横条，不挡输出统计
+          height: 5,
           opacity: visible ? 1 : 0,
           transition: 'opacity .3s ease',
         },
@@ -691,11 +704,10 @@ window.__ModuleLoader__.load({
         style: {
           pointerEvents: visible ? 'auto' : 'none', // 隐藏时不再拦截底下内容
           display: 'flex',
-          alignItems: 'flex-end',
+          alignItems: 'center',
           justifyContent: 'center',
           width: 156,
-          height: HANDLE_STRIP_H,
-          paddingBottom: 3,
+          height: 5,
           cursor: 'pointer',
           touchAction: 'none', // 让触摸端的「上滑」交给指针事件，而不是页面滚动
           outline: 'none',
@@ -754,17 +766,16 @@ window.__ModuleLoader__.load({
       const [mounted, setMounted] = useState(false)
       const [shown, setShown] = useState(false)
       const [H, setH] = useState(TERM_DEFAULT_H)
-      const [handleVisible, setHandleVisible] = useState(true)
 
-      // 只有底部把手「显示」时预留 HANDLE_STRIP_H 横条（不遮统计），隐藏时预留 0，
-      // 从而避免常驻把对话滚动容器压短、让滚动条底部缺像素；终端展开用面板高度 H 压缩。
+      // 收起态常驻预留 HANDLE_STRIP_H 横条（不遮输出统计，统一预留也没有显隐跳动）；
+      // 终端展开时改用面板高度 H 压缩对话区。
       useEffect(() => {
         const frame = getFrame()
         const center = getCenterCol(frame)
         if (!center) return
-        center.style.paddingBottom = (shown ? H : (handleVisible ? HANDLE_STRIP_H : 0)) + 'px'
+        center.style.paddingBottom = (shown ? H : HANDLE_STRIP_H) + 'px'
         return () => { center.style.paddingBottom = '' }
-      }, [shown, H, handleVisible])
+      }, [shown, H])
 
       const openPanel = useCallback(() => { setMounted(true); setShown(true) }, [])
       const minimize = useCallback(() => { setShown(false) }, [])
@@ -772,7 +783,7 @@ window.__ModuleLoader__.load({
 
       return React.createElement(React.Fragment, null,
         // 底部把手只在终端收起/未打开时显示：点击/上滑 = 打开。
-        !shown ? React.createElement(FloatOpenButton, { metrics, palette, onClick: openPanel, minimized: mounted, onVisibleChange: setHandleVisible }) : null,
+        !shown ? React.createElement(FloatOpenButton, { metrics, palette, onClick: openPanel, minimized: mounted }) : null,
         mounted ? React.createElement(TerminalErrorBoundary, {
           onReport: (m) => reportError('ENTRY_ERROR', m),
         }, React.createElement(TerminalPanel, {
