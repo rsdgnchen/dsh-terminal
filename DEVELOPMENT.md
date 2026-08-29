@@ -7,16 +7,16 @@
 DSH 插件 = 「Host 半（Node/Cordis，服务端）」+「Client 半（浏览器）」两个 bundle。本插件遵循 `@yaha/dsh-session-delete` 已验证的接入路径。
 
 ```
-浏览器 (client.js)                    服务端 (index.js)
-┌──────────────────────────┐        ┌──────────────────────────────┐
-│ xterm.js 面板（shell.overlay）│  WS   │ webServer: registerUpgrade     │
-│  · 标签页(每标签一 xterm+WS) │ ────► │  /__yaha-terminal/ws           │
-│  · 明暗自适应                │  ◄──  │  · WebSocketServer(noServer)   │
-│  · 挂起/关闭 控制状态         │       │  · 每连接 spawn 一个 node-pty   │
-└──────────────────────────┘        │  /__yaha-terminal/vendor/*       │
-                                     │  /__yaha-terminal/error (POST)  │
-                                     └──────────────────────────────┘
+Browser (client.js)                           Server (index.js)
+┌──────────────────────────────────────┐      ┌────────────────────────────────────────────┐
+│ xterm.js panel (shell.overlay)       │      │ webServer: registerUpgrade                 │
+│ - 1 tab = 1 xterm + 1 WebSocket      │ ───► │  /__yaha-terminal/ws                       │
+│ - theme adaptation                   │ ◄─── │ - WebSocketServer(noServer)                │
+│ - suspend / close state              │      │ - spawn 1 node-pty per connection          │
+└──────────────────────────────────────┘      └────────────────────────────────────────────┘
 ```
+
+> 说明：左＝浏览器半（`client.js`），右＝服务端半（`index.js`）。`───►`＝客户端经 WebSocket 上行（`input`/`resize`/`kill`），`◄───`＝Host 下行（`output`/`exit`/`error`）。客户端每个标签一条 WS → Host 为其起一个 `$SHELL` PTY；另有静态资源路由 `/__yaha-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}` 与错误上报 `/__yaha-terminal/error`（POST）。
 
 - **交互终端**：每标签页一个 WebSocket 连接 → Host 为其起一个 `$SHELL` 的 PTY，双向流式。
 - **UI 挂载点**：注册进 `shell.overlay`（list 槽，additive），不替换任何现有内容。
