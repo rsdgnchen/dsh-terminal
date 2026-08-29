@@ -4,6 +4,8 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 
 插件名带 `yaha`，便于你在 `~/.dsh/plugins/` 下统一管理。
 
+> 🚩 **开发者注意：[AGENT-CONTEXT.md](AGENT-CONTEXT.md)**——本插件已改为从 GitHub 一键安装，本地源码 `/home/yaha/dsh/plugins/dsh-terminal` 与 profile 实际加载的副本**不是同一份**，改源码需 `pnpm update @yaha/dsh-terminal` + `pm2 restart dsh-web` 才生效（本地调试可临时 `dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal` 切回 `file:`）。
+
 ```
 ┌───────────┬────────────────────────────────┐
 │ Sidebar   │ Conversation                   │
