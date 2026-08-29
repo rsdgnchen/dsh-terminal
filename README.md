@@ -45,10 +45,22 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 > ```
 > 装完确认 `pnpm --version` 可执行。
 
-在 web profile 里作为 bundle 加入（`file:` 指向插件目录）：
+**从 GitHub / npm 一键安装（推荐）**
+
+本插件已标注 GitHub **`dsh-plugin` 主题**（https://github.com/topics/dsh-plugin），也可在 `dsh-plugin-marketplace` 的 **Settings → Plugins → Plugin market** 里搜索并一键安装。
 
 ```bash
-# 以插件源码目录为准安装（推荐：源码 => ~/.dsh/plugins 下统一管理）
+# GitHub（推荐，无需发布 npm；把 <your-user> 换成你的 GitHub 用户名）
+dsh plugin --profile web add github:<your-user>/dsh-terminal
+
+# 或 npm（需先发布到 npm）
+dsh plugin --profile web add @yaha/dsh-terminal
+```
+
+**本地源码安装（开发/调试）**
+
+```bash
+# 以插件源码目录为准安装（源码 => ~/.dsh/plugins 下统一管理）
 dsh plugin --profile web add file:$HOME/.dsh/plugins/dsh-terminal
 ```
 
