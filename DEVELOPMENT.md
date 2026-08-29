@@ -145,6 +145,8 @@ server → client:
 
 5. **会话生命周期**：面板 `×` 关闭会卸载面板 → 每条 WS 关闭 → Host 杀 PTY。若想更长时间保活，可考虑在 Host 按 `sessionId` 维护独立 PTY 并支持 attach/detach（当前未实现）。
 
+6. **CSS 逗号会把「伪元素」拆成「整段元素」选择器（已踩过，曾把整个页面布局搞崩）**：`.Md3f7G_scroll, .wSkVaW_scrollBody::-webkit-scrollbar{width:8px}` 会被逗号拆成「`.Md3f7G_scroll`（整段） **或** `.wSkVaW_scrollBody::-webkit-scrollbar`」，于是 `width:8px` 作用到**整个消息容器**，把它压成 8px 宽 → 每行单字母、页面走样。**修复：每个 `::-webkit-scrollbar-*` 选择器必须各自带上伪元素后缀，再用 `CONV_SCROLL_PSEUDO(p)` 逐个子选择器拼接**，不要用「`选择器列表 + '::-webkit-scrollbar'`」这种写法。
+
 ## 6. 扩展点
 
 - **改回看行数**：`client.js` `scrollback: 5000`。

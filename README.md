@@ -4,7 +4,6 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 
 插件名带 `yaha`，便于你在 `~/.dsh/plugins/` 下统一管理。
 
-![布局示意]
 ```
 ┌───────────┬────────────────────────────────┐
 │ Sidebar   │ Conversation                   │
@@ -103,10 +102,6 @@ dsh-terminal/
 - **新建标签报错/终端消失**：见 `DEVELOPMENT.md` 的「t 变量遮蔽」一节——新增标签的 updater 形参不能叫 `t`。
 - **终端没有颜色/太暗**：明暗自适应依赖应用主题；若自定义了其它主题，可在 `src/client.js` 的 `buildPalette()` 里补充对应 token。
 - **想改回看行数**：`src/client.js` 中 `scrollback: 5000`。
-
-## 相关插件
-
-- `@yaha/dsh-session-delete`：会话删除（头部删除按钮已按需移除，删除保留在工作区会话行三点菜单）。
 
 ## License
 
