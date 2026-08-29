@@ -92,12 +92,13 @@ server → client:
 
 | 状态 | `mounted` | `shown` | 效果 |
 |---|---|---|---|
-| 打开 | true | true | 面板可见；`❯_` 芯片隐藏 |
-| 挂起`−` | true | false | 面板 `display:none` 但**保留会话**；`❯_` 芯片＝恢复（绿色） |
-| 关闭`×` | false | false | 卸载面板，杀死全部会话 |
+| 打开 | true | true | 面板可见（停靠 `center` 列底部）；仅显示面板，底部入口横杠隐藏 |
+| 挂起`−` | true | false | 面板 `display:none` 但**保留会话**；底部横杠＝恢复（品牌色点亮） |
+| 关闭`×` | false | false | 卸载面板，杀死全部会话；底部横杠＝打开 |
 
-- 压缩对话区：`shown && center` 时给 `center` 列设 `padding-bottom = H`，否则清空（`useEffect` 依赖 `[shown, H]`）。
-- 底部入口是 `FloatOpenButton`：一个**圆角 `❯_` 芯片**（`bottom:8; left:sidebar+10`，不压右侧滚动条）。挂起态绿色，正常态灰色/深色。
+- 压缩对话区：给 `center` 列设 `padding-bottom = (shown ? H : HANDLE_STRIP_H)`（`useEffect` 依赖 `[shown, H]`）——终端展开时用面板高度 H，其他时候预留底部 `HANDLE_STRIP_H`（14px）横条放入口横杠、不挡输出统计。
+- 底部入口是 `FloatOpenButton`：一根 **iOS 主屏指示条风格的半透明横杠**（`left=sidebar / right=details`，贴底部预留横条），**上滑**（或轻点/回车）**打开**终端；挂起态用品牌色点亮、普通态用次级文字色压暗。定位容器 `pointerEvents:none` 不拦截对话内容，只有横杠本体（156×14 触摸区）接收指针事件。为避免挡住 dsh 输出统计，**3 秒无操作自动淡出**（`opacity` + `pointerEvents:none`），光标靠近 frame 底部（`clientY ≥ rect.bottom - 56`）或与把手交互时重新亮起并重置计时。
+- **面板顶部小横杠（拖拽条）** = 拖动调高 + 点击收起：`onPointerDown` 里位移 `≤5px` 视为轻点，`onUp` 里未拖动则触发 `onMinimize()`（等同 `−`，保留会话）；超过 5px 才算拖动并 `onResize`。`title`/`aria-label` 提示「点击收起 · 拖动调整高度」。
 
 ### 4.3 布局测量
 - `getOverlayLayer()` = `document.querySelector('[data-shell-overlay]')`；其 `.parentElement` 即 AppFrame。
@@ -146,18 +147,23 @@ server → client:
 
 ## 7. 构建 / 部署流程（本地）
 
+本插件以 `file:` 依赖被 profile 引用（`@yaha/dsh-terminal` → `file:$HOME/dsh/plugins/dsh-terminal`），profile 的 `node_modules/@yaha/dsh-terminal` 与源码**硬链接**（inode 相同），所以直接改 `$HOME/dsh/plugins/dsh-terminal/src/**` 即改到服务器加载的副本。
+
 ```bash
-# 1) 编辑源码后，同步到部署目录（服务器实际加载的位置）
-cp -r $HOME/dsh/plugins/dsh-terminal/* $HOME/.dsh/plugins/dsh-terminal/
+# 1) 若编辑器是「写临时文件再 rename 替换」，会断开硬链接——把改动重新放进 profile 副本：
+cp -f $HOME/dsh/plugins/dsh-terminal/src/client.js \
+      $HOME/.dsh/profiles/web/node_modules/@yaha/dsh-terminal/src/client.js
 
-# 2) 若修改了 package.json / bundle 结构，需要重新 add：
-dsh plugin --profile web add file:$HOME/.dsh/plugins/dsh-terminal
+# 2) 若修改了 package.json / cordis.patch.yml / bundle 结构，需要重新 add：
+dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal
 
-# 3) 生效（客户端 bundle 需在服务启动时重组）：
+# 3) 生效：
+#    - 仅改 src/client.js：刷新浏览器即可（服务端 no-cache 现读 + dsh-client-hmr 常驻轮询拼 bundle）。
+#    - 改了 bundle 结构 / 包清单：需重启 web 服务（客户端 bundle 在启动时重组）。
 pm2 restart dsh-web
 ```
 
-> 注意：`@yaha/dsh-session-delete` 在 profile 的 node_modules 是**独立副本**，编辑 `~/.dsh/plugins/...` 后需再同步到 `~/.dsh/profiles/web/node_modules/@yaha/dsh-session-delete/`；而 `@yaha/dsh-terminal` 在 profile 中是**硬链接**到 `~/.dsh/plugins/dsh-terminal/`（inode 相同），直接编辑插件源即可。
+> 备注：`$HOME/.dsh/plugins/dsh-terminal` 是另一份**独立副本**（历史部署位置），当前 profile 并不引用它；只有 `file:` 指向的 `$HOME/dsh/plugins/dsh-terminal` 才是生效源码，二选一改动时保持同步即可。
 
 ## License
 

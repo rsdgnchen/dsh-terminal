@@ -7,9 +7,11 @@
 // 打开时：
 //   1. 按 AppFrame 的 grid 列宽把终端停靠在 center 列底部（left/right 对齐，
 //      不吃 sidebar / details）；
-//   2. 给 center 列加 padding-bottom = 终端高度，从而真正压缩对话区（上8下2）；
+//   2. 给 center 列加 padding-bottom = (shown ? H : HANDLE_STRIP_H)，从而真正压缩
+//      对话区（上8下2）；底部常驻 HANDLE_STRIP_H 横条放把手、不挡输出统计；
 //   3. xterm.js 按需加载（Host 提供的 vendor 静态文件），连 WebSocket 双向流式；
-//   4. 顶部拖拽条可调终端高度；底部圆角 ❯_ 芯片 打开/挂起/恢复。
+//   4. 顶部拖拽条可调终端高度，点击（未拖动）收起终端（等同 −）；
+//      底部「透明横杠」（iOS 主屏指示条风格）上滑/轻点打开，挂起时用品牌色点亮。
 // 面板状态（TerminalOverlay 本地态）：mounted=面板在 DOM（保留会话）；
 //   shown=面板可见。挂起(−)=shown=false 但保留会话；关闭(×)=卸载并杀全部会话。
 //
@@ -31,6 +33,8 @@ window.__ModuleLoader__.load({
     const TERM_MIN_H = 120
     const TERM_DEFAULT_H = 200
     const TERM_MAX_H = 520
+    // 给底部把手预留的常驻横条高度（让输出统计/内容盖不住把手，把手也不遮挡统计）。
+    const HANDLE_STRIP_H = 14
 
     // --- 文案 ---------------------------------------------------------------
     const zhDict = {
@@ -415,10 +419,11 @@ window.__ModuleLoader__.load({
         e.preventDefault()
         const startY = e.clientY
         const startH = H
-        const frame = getFrame()
-        const rect = frame ? frame.getBoundingClientRect() : null
-        const frameBottom = rect ? rect.bottom : window.innerHeight
+        let moved = false
         const onMove = (ev) => {
+          // 位移 ≤5px 视为轻点；超过才算「拖动调整高度」。
+          if (!moved && Math.abs(ev.clientY - startY) <= 5) return
+          moved = true
           const newH = startH + (startY - ev.clientY)
           const clamped = Math.min(TERM_MAX_H, Math.max(TERM_MIN_H, Math.round(newH)))
           onResize(clamped)
@@ -426,10 +431,12 @@ window.__ModuleLoader__.load({
         const onUp = () => {
           window.removeEventListener('pointermove', onMove)
           window.removeEventListener('pointerup', onUp)
+          // 未发生拖动（点击/轻点）→ 收起终端（等同 −，保留会话）。
+          if (!moved) onMinimize()
         }
         window.addEventListener('pointermove', onMove)
         window.addEventListener('pointerup', onUp)
-      }, [H, onResize])
+      }, [H, onResize, onMinimize])
 
       const addTab = useCallback(() => {
         const id = nextIdRef.current++
@@ -523,11 +530,16 @@ window.__ModuleLoader__.load({
           overflow: 'hidden',
         },
       }, [
-        // 顶部拖拽条
-        React.createElement('div', { key: 'bar', onPointerDown: onPointerDown, style: {
-          flex: 'none', height: 7, cursor: 'row-resize', touchAction: 'none',
-          background: alpha(palette.accent, 0.3), display: 'flex', alignItems: 'center', justifyContent: 'center',
-        } }, React.createElement('div', { style: { width: 42, height: 4, borderRadius: 2, background: alpha(palette.fg2, 0.5) } })),
+        // 顶部拖拽条：拖动=调整高度，点击（未拖动）=收起终端（等同 −）。
+        React.createElement('div', {
+          key: 'bar', onPointerDown: onPointerDown,
+          title: lang() === 'en' ? 'Click to collapse · drag to resize' : '点击收起 · 拖动调整高度',
+          'aria-label': t('minimize'),
+          style: {
+            flex: 'none', height: 7, cursor: 'row-resize', touchAction: 'none',
+            background: alpha(palette.accent, 0.3), display: 'flex', alignItems: 'center', justifyContent: 'center',
+          },
+        }, React.createElement('div', { style: { width: 42, height: 4, borderRadius: 2, background: alpha(palette.fg2, 0.5) } })),
         // 标签栏
         React.createElement('div', { key: 'tabs', style: tabbarStyle }, [
           ...tabs.map((tab) => React.createElement('div', {
@@ -574,39 +586,124 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    // --- 打开终端按钮（对话区底部圆角小芯片，面板隐藏/挂起时可见） ------------
-    // 只保留 ❯_ 提示符，做成圆角、贴底的折叠/展开把手；不覆盖右侧滚动条。
+    // --- 打开终端把手（对话区底部，iOS App Switcher / 主屏指示条风格） --------
+    // 把原先的 ❯_ 芯片改成 iOS 那根「透明的横杠」：一段居中、半透明的圆角短杠，
+    // 呼出方式为「上滑」（或轻点 / 回车）。挂起（minimized）时用品牌色点亮，
+    // 提示这是「恢复」而不是「新开」。
+    // 为避免挡住对话区底部的 dsh 输出统计：底部常驻 HANDLE_STRIP_H 横条放把手，
+    // 把手 3 秒无操作自动淡出（同滚动条逻辑），光标靠近底部时重新亮起。
     function FloatOpenButton(props) {
-      const { metrics, onClick, minimized } = props
-      const chipStyle = {
-        position: 'absolute',
-        bottom: 8,
-        left: (metrics.sidebar + 10),
-        zIndex: 30,
-        pointerEvents: 'auto',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 30,
-        padding: '0 12px',
-        borderRadius: 9,
-        border: '1px solid ' + (minimized ? 'rgba(63,185,80,.5)' : 'rgba(128,128,128,.3)'),
-        background: 'var(--dsw-alias-bg-base, #161b22)',
-        color: minimized ? '#3fb950' : 'var(--dsw-alias-label-secondary, #9aa0a6)',
-        cursor: 'pointer',
-        fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace',
-        fontSize: 15,
-        fontWeight: 700,
-        lineHeight: 1,
-        boxShadow: '0 2px 8px rgba(0,0,0,.18)',
-      }
-      return React.createElement('button', {
-        type: 'button',
+      const { metrics, palette, onClick, minimized } = props
+      const [visible, setVisible] = useState(true)
+      const [hovered, setHovered] = useState(false)
+      const [pressed, setPressed] = useState(false)
+      const down = useRef(null)
+      const hideTimer = useRef(null)
+
+      // 亮起并把隐藏计时重置为 3 秒。
+      const wake = useCallback(() => {
+        if (hideTimer.current) clearTimeout(hideTimer.current)
+        setVisible(true)
+        hideTimer.current = setTimeout(() => setVisible(false), 3000)
+      }, [])
+
+      // 挂载即亮起一次，随后让 3 秒计时把它淡下去；卸载时清掉计时器。
+      useEffect(() => {
+        wake()
+        return () => { if (hideTimer.current) clearTimeout(hideTimer.current) }
+      }, [wake])
+
+      // 光标靠近 frame 底部时重新亮起（让把手可被再次发现）。
+      useEffect(() => {
+        const frame = getFrame()
+        if (!frame) return
+        const onMove = (e) => {
+          const rect = frame.getBoundingClientRect()
+          if (e.clientY >= rect.bottom - 56 && e.clientY <= rect.bottom + 8) wake()
+        }
+        window.addEventListener('pointermove', onMove, { passive: true })
+        return () => window.removeEventListener('pointermove', onMove)
+      }, [wake])
+
+      const onPointerDown = useCallback((e) => {
+        down.current = { y: e.clientY }
+        setPressed(true)
+        wake()
+        // 捕获指针，让「上滑」期间手指/光标移出把手后仍能收到 pointerup。
+        try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* 忽略 */ }
+      }, [wake])
+
+      const onPointerUp = useCallback((e) => {
+        const d = down.current
+        down.current = null
+        setPressed(false)
+        if (!d) return
+        const dy = (e.clientY != null ? e.clientY : d.y) - d.y
+        // 上滑超过阈值，或基本原位（轻点）都呼出终端；往下拖不触发，避免误触。
+        if (dy < -16 || Math.abs(dy) <= 6) onClick()
+      }, [onClick])
+
+      const onPointerCancel = useCallback(() => {
+        down.current = null
+        setPressed(false)
+      }, [])
+
+      const onKey = useCallback((e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() }
+      }, [onClick])
+
+      // 半透明横杠：普通态用次级文字色压暗（随主题明暗），挂起态用品牌色点亮。
+      const handleBg = minimized
+        ? alpha(palette.accent, hovered ? 0.85 : 0.72)
+        : alpha(palette.fg2, hovered ? 0.6 : 0.42)
+
+      return React.createElement('div', {
+        style: {
+          position: 'absolute',
+          left: metrics.sidebar,
+          right: metrics.details,
+          bottom: 0,
+          zIndex: 30,
+          pointerEvents: 'none', // 只做定位/居中，不拦截底下对话内容
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          height: HANDLE_STRIP_H, // 贴近底部预留横条，不挡输出统计
+          opacity: visible ? 1 : 0,
+          transition: 'opacity .3s ease',
+        },
+      }, React.createElement('div', {
+        role: 'button',
+        tabIndex: 0,
         title: minimized ? t('restore') : t('open'),
         'aria-label': minimized ? t('restore') : t('open'),
-        onClick: onClick,
-        style: chipStyle,
-      }, '❯_')
+        onPointerDown,
+        onPointerUp,
+        onPointerCancel,
+        onPointerEnter: () => { setHovered(true); wake() },
+        onPointerLeave: () => setHovered(false),
+        onKeyDown: onKey,
+        style: {
+          pointerEvents: visible ? 'auto' : 'none', // 隐藏时不再拦截底下内容
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'center',
+          width: 156,
+          height: HANDLE_STRIP_H,
+          paddingBottom: 3,
+          cursor: 'pointer',
+          touchAction: 'none', // 让触摸端的「上滑」交给指针事件，而不是页面滚动
+          outline: 'none',
+        },
+      }, React.createElement('div', {
+        style: {
+          width: pressed ? 168 : 148,   // 按下时稍微拉宽，提示「可上拉」
+          height: 5,
+          borderRadius: 999,
+          background: handleBg,
+          transition: 'width .12s ease, background .16s ease',
+        },
+      })))
     }
 
     // --- React 错误边界（防止单个渲染错误把整个 overlay 入口摘掉） ------------
@@ -653,16 +750,14 @@ window.__ModuleLoader__.load({
       const [shown, setShown] = useState(false)
       const [H, setH] = useState(TERM_DEFAULT_H)
 
-      // 同步 center 列的 padding-bottom 以真正压缩对话区（仅面板可见时）
+      // 关闭/挂起时给底部预留「把手横条」（HANDLE_STRIP_H），让输出统计/内容
+      // 盖不住把手、把手也不遮挡统计；终端展开时改用面板高度 H 压缩对话区。
       useEffect(() => {
         const frame = getFrame()
         const center = getCenterCol(frame)
-        if (shown && frame && center) {
-          center.style.paddingBottom = H + 'px'
-        } else if (center) {
-          center.style.paddingBottom = ''
-        }
-        return () => { if (center) center.style.paddingBottom = '' }
+        if (!center) return
+        center.style.paddingBottom = (shown ? H : HANDLE_STRIP_H) + 'px'
+        return () => { center.style.paddingBottom = '' }
       }, [shown, H])
 
       const openPanel = useCallback(() => { setMounted(true); setShown(true) }, [])
@@ -670,7 +765,8 @@ window.__ModuleLoader__.load({
       const closePanel = useCallback(() => { setMounted(false); setShown(false) }, [])
 
       return React.createElement(React.Fragment, null,
-        !shown ? React.createElement(FloatOpenButton, { metrics, onClick: openPanel, minimized: mounted }) : null,
+        // 底部把手只在终端收起/未打开时显示：点击/上滑 = 打开。
+        !shown ? React.createElement(FloatOpenButton, { metrics, palette, onClick: openPanel, minimized: mounted }) : null,
         mounted ? React.createElement(TerminalErrorBoundary, {
           onReport: (m) => reportError('ENTRY_ERROR', m),
         }, React.createElement(TerminalPanel, {
