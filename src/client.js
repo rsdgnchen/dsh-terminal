@@ -593,12 +593,17 @@ window.__ModuleLoader__.load({
     // 为避免挡住对话区底部的 dsh 输出统计：底部常驻 HANDLE_STRIP_H 横条放把手，
     // 把手 3 秒无操作自动淡出（同滚动条逻辑），光标靠近底部时重新亮起。
     function FloatOpenButton(props) {
-      const { metrics, palette, onClick, minimized } = props
+      const { metrics, palette, onClick, minimized, onVisibleChange } = props
       const [visible, setVisible] = useState(true)
       const [hovered, setHovered] = useState(false)
       const [pressed, setPressed] = useState(false)
       const down = useRef(null)
       const hideTimer = useRef(null)
+
+      // 把可见性上报给父级（用于只在把手显示时预留底部横条，避免常驻压短滚动条）。
+      useEffect(() => {
+        if (typeof onVisibleChange === 'function') onVisibleChange(visible)
+      }, [visible, onVisibleChange])
 
       // 亮起并把隐藏计时重置为 3 秒。
       const wake = useCallback(() => {
@@ -749,16 +754,17 @@ window.__ModuleLoader__.load({
       const [mounted, setMounted] = useState(false)
       const [shown, setShown] = useState(false)
       const [H, setH] = useState(TERM_DEFAULT_H)
+      const [handleVisible, setHandleVisible] = useState(true)
 
-      // 关闭/挂起时给底部预留「把手横条」（HANDLE_STRIP_H），让输出统计/内容
-      // 盖不住把手、把手也不遮挡统计；终端展开时改用面板高度 H 压缩对话区。
+      // 只有底部把手「显示」时预留 HANDLE_STRIP_H 横条（不遮统计），隐藏时预留 0，
+      // 从而避免常驻把对话滚动容器压短、让滚动条底部缺像素；终端展开用面板高度 H 压缩。
       useEffect(() => {
         const frame = getFrame()
         const center = getCenterCol(frame)
         if (!center) return
-        center.style.paddingBottom = (shown ? H : HANDLE_STRIP_H) + 'px'
+        center.style.paddingBottom = (shown ? H : (handleVisible ? HANDLE_STRIP_H : 0)) + 'px'
         return () => { center.style.paddingBottom = '' }
-      }, [shown, H])
+      }, [shown, H, handleVisible])
 
       const openPanel = useCallback(() => { setMounted(true); setShown(true) }, [])
       const minimize = useCallback(() => { setShown(false) }, [])
@@ -766,7 +772,7 @@ window.__ModuleLoader__.load({
 
       return React.createElement(React.Fragment, null,
         // 底部把手只在终端收起/未打开时显示：点击/上滑 = 打开。
-        !shown ? React.createElement(FloatOpenButton, { metrics, palette, onClick: openPanel, minimized: mounted }) : null,
+        !shown ? React.createElement(FloatOpenButton, { metrics, palette, onClick: openPanel, minimized: mounted, onVisibleChange: setHandleVisible }) : null,
         mounted ? React.createElement(TerminalErrorBoundary, {
           onReport: (m) => reportError('ENTRY_ERROR', m),
         }, React.createElement(TerminalPanel, {
