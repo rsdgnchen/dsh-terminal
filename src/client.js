@@ -99,14 +99,20 @@ window.__ModuleLoader__.load({
     }
 
     // --- 对话消息滚动条：只显示滑块、透明轨道（对齐 DeepSeek/Gemini 观感） -----
-    // 底部常驻横条会让对话滚动容器稍微变矮；轨道设为透明后，底部那点空隙不再
-    // 露出「轨道缺失」。目标为 dsh 对话消息滚动容器（.3f7G_scroll，`flex:auto; overflow-y:auto`）。
+    // 浏览器窗口是圆角、滚动条轨道是直角，底部那圈「多出来的像素」盖不住、显得割裂。
+    // 把轨道设为透明（只剩滑块）后，直角轨道不再可见，也就没有割裂。
+    // 目标为 dsh 对话滚动容器：.Md3f7G_scroll（消息滚动体）+ .wSkVaW_scrollBody（滚动体）。
+    // 关键：每个 ::-webkit-scrollbar 选择器必须各自带上伪元素后缀，否则逗号会拆出
+    // 「整段元素」选择器（例如 .Md3f7G_scroll{width:8px}），把容器压成 8px 宽、导致每行单字母。
+    // 注意：这两个是 dsh 当前构建的 module-scoped 哈希类名，升级后可能变化（失效无害）。
+    const CONV_SCROLL_SEL = '.Md3f7G_scroll, .wSkVaW_scrollBody'
+    const CONV_SCROLL_PSEUDO = (p) => CONV_SCROLL_SEL.split(', ').map((s) => s.trim() + p).join(', ')
     const CONV_SCROLL_CSS =
-      '.3f7G_scroll::-webkit-scrollbar{width:10px;height:10px}' +
-      '.3f7G_scroll::-webkit-scrollbar-track{background:transparent}' +
-      '.3f7G_scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45));border-radius:999px;background-clip:padding-box;border:2px solid transparent}' +
-      '.3f7G_scroll::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
-      '.3f7G_scroll{scrollbar-width:thin;scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
+      CONV_SCROLL_PSEUDO('::-webkit-scrollbar') + '{width:8px;height:8px}' +
+      CONV_SCROLL_PSEUDO('::-webkit-scrollbar-track') + '{background:transparent}' +
+      CONV_SCROLL_PSEUDO('::-webkit-scrollbar-thumb') + '{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45));border-radius:999px;background-clip:padding-box;border:2px solid transparent}' +
+      CONV_SCROLL_PSEUDO('::-webkit-scrollbar-thumb:hover') + '{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
+      CONV_SCROLL_SEL + '{scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
     if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@yaha/dsh-terminal/conv-scrollbar"]')) {
       const tag = document.createElement('style')
       tag.dataset.plugin = '@yaha/dsh-terminal'
