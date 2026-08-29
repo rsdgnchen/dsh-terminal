@@ -282,6 +282,8 @@ window.__ModuleLoader__.load({
       paletteRef.current = palette
       const onExitRef = useRef(props.onExit)
       onExitRef.current = props.onExit
+      const onFocusChangeRef = useRef(props.onFocusChange)
+      onFocusChangeRef.current = props.onFocusChange
       const [status, setStatus] = useState('loading')
 
       useEffect(() => {
@@ -299,6 +301,7 @@ window.__ModuleLoader__.load({
         let term = null
         let fit = null
         let scrollCleanup = null
+        let focusCleanup = null
         async function boot() {
           try {
             await loadXterm()
@@ -361,6 +364,20 @@ window.__ModuleLoader__.load({
               }
             }
 
+            // 聚焦状态上报：终端获得/失去键盘焦点时通知父级（用于显示「图钉」按钮）。
+            const c = containerRef.current
+            const doFocus = (v) => { if (typeof onFocusChangeRef.current === 'function') onFocusChangeRef.current(v) }
+            const onFocusIn = () => doFocus(true)
+            const onFocusOut = () => doFocus(false)
+            c.addEventListener('focusin', onFocusIn)
+            c.addEventListener('focusout', onFocusOut)
+            // 若初始化时终端已经在聚焦态（如挂起恢复被 ResizeObserver 聚焦），补报一次。
+            if (c.contains(document.activeElement)) doFocus(true)
+            focusCleanup = () => {
+              c.removeEventListener('focusin', onFocusIn)
+              c.removeEventListener('focusout', onFocusOut)
+            }
+
             const proto = location.protocol === 'https:' ? 'wss' : 'ws'
             ws = new WebSocket(proto + '://' + location.host + WS_PATH)
             wsRef.current = ws
@@ -397,6 +414,7 @@ window.__ModuleLoader__.load({
         return () => {
           disposed = true
           if (scrollCleanup) { try { scrollCleanup() } catch { /* 忽略 */ } }
+          if (focusCleanup) { try { focusCleanup() } catch { /* 忽略 */ } }
           if (ws) { try { ws.send(JSON.stringify({ type: 'kill' })) } catch {} ; try { ws.close() } catch {} }
           if (term) { try { term.dispose() } catch {} }
           termRef.current = null
@@ -456,6 +474,8 @@ window.__ModuleLoader__.load({
     function TerminalPanel(props) {
       const { H, metrics, palette, onResize, onMinimize, onClose, hidden, kbdGrab, onToggleKbd } = props
       const [tabs, setTabs] = useState([{ id: 1, num: 1, title: 'Terminal 1' }])
+      // 终端是否持有键盘焦点（true 时显示「图钉」按钮；点击可释放/接管）
+      const [kbdFocused, setKbdFocused] = useState(false)
       const [activeId, setActiveId] = useState(1)
       const nextIdRef = useRef(2)
 
@@ -620,13 +640,24 @@ window.__ModuleLoader__.load({
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, flex: 'none',
             border: '1px dashed ' + palette.border, background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0,
           } }, '+'),
-          React.createElement('div', { key: 'spacer', style: { flex: '1 1 auto' } }),
-          React.createElement('button', { key: 'kbd', type: 'button', onClick: onToggleKbd, title: kbdGrab ? t('kbdGrab') : t('kbdRelease'), 'aria-label': kbdGrab ? t('kbdGrab') : t('kbdRelease'), style: {
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, flex: 'none', marginLeft: 2,
-            border: '1px solid ' + (kbdGrab ? alpha(palette.accent, 0.55) : 'transparent'),
-            background: kbdGrab ? alpha(palette.accent, 0.14) : 'transparent',
-            color: kbdGrab ? palette.accent : palette.fg2, cursor: 'pointer', fontSize: 12, lineHeight: '16px', padding: 0,
-          } }, '⌨'),
+          // 标签栏空区域：双击切换「键盘优先」（接管/释放）。
+          React.createElement('div', {
+            key: 'spacer', style: { flex: '1 1 auto' }, onDoubleClick: onToggleKbd,
+            title: lang() === 'en' ? 'Double-click to toggle keyboard priority' : '双击切换键盘优先（接管/释放）',
+          }),
+          // 极简「图钉」：终端聚焦时才出现；点击释放/接管键盘。
+          React.createElement('button', {
+            key: 'pin', type: 'button', onClick: onToggleKbd,
+            title: kbdGrab ? t('kbdGrab') : t('kbdRelease'), 'aria-label': kbdGrab ? t('kbdGrab') : t('kbdRelease'),
+            style: {
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 18, height: 18, borderRadius: 5, flex: 'none', marginLeft: 2, padding: 0,
+              border: 'none', background: 'transparent',
+              color: kbdGrab ? palette.accent : palette.fg2,
+              opacity: kbdFocused ? 1 : 0, pointerEvents: kbdFocused ? 'auto' : 'none',
+              transition: 'opacity .16s ease', cursor: 'pointer', fontSize: 12, lineHeight: '16px',
+            },
+          }, '📌'),
           React.createElement('button', { key: 'minimize', type: 'button', onClick: onMinimize, title: t('minimize'), 'aria-label': t('minimize'), style: {
             border: 'none', background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 15, lineHeight: '18px', padding: '0 4px', flex: 'none', marginLeft: 2,
           } }, '−'),
@@ -640,7 +671,7 @@ window.__ModuleLoader__.load({
             position: 'absolute', inset: 0,
             visibility: tab.id === activeId ? 'visible' : 'hidden',
             zIndex: tab.id === activeId ? 1 : 0,
-          } }, React.createElement(TerminalView, { palette, active: tab.id === activeId, grabFocus: kbdGrab, onExit: () => handleExit(tab.id) })))),
+          } }, React.createElement(TerminalView, { palette, active: tab.id === activeId, grabFocus: kbdGrab, onFocusChange: setKbdFocused, onExit: () => handleExit(tab.id) })))),
       ])
     }
 
