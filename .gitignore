@@ -2,3 +2,5 @@ node_modules/
 *.log
 *.tgz
 .DS_Store
+# 本地开发/智能体专用上下文（不进 GitHub 仓库）
+AGENT-CONTEXT.md

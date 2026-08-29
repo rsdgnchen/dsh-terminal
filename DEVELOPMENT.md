@@ -2,8 +2,6 @@
 
 面向开发者的内部文档：架构、文件职责、Host↔Client 协议、扩展点与踩坑。
 
-> 🚩 **开发前必读 [AGENT-CONTEXT.md](AGENT-CONTEXT.md)**：本地源码 `/home/yaha/dsh/plugins/dsh-terminal` 与 profile 实际加载的副本**不是同一份**（本插件已改为从 GitHub 安装）。**改源码不会自动生效**；需 `pnpm update @yaha/dsh-terminal` + `pm2 restart dsh-web`。想本地即时调试，可先 `dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal` 切回 `file:`。
-
 ## 1. 总体架构
 
 DSH 插件 = 「Host 半（Node/Cordis，服务端）」+「Client 半（浏览器）」两个 bundle。本插件遵循 `@yaha/dsh-session-delete` 已验证的接入路径。
