@@ -47,7 +47,7 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 
 **从 GitHub 一键安装（推荐）**
 
-本插件已标注 GitHub **`dsh-plugin` 主题**（https://github.com/topics/dsh-plugin），也可在 `dsh-plugin-marketplace` 的 **Settings → Plugins → Plugin market** 里搜索并一键安装。
+本插件已标注 GitHub [`dsh-plugin` 主题](https://github.com/topics/dsh-plugin)，也可在 `dsh-plugin-marketplace` 的 **Settings → Plugins → Plugin market** 里搜索并一键安装。
 
 ```bash
 # GitHub 一键安装（推荐，无需发布到 npm）
