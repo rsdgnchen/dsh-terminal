@@ -33,7 +33,8 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 - **输出回看**：xterm 滚动缓冲默认 **5000 行**（改 `src/client.js` 的 `scrollback`）
 - **入口**：对话区底部有一根 **iOS App Switcher 样式的透明横杠**：**上滑**（或轻点/回车）**打开**终端。它**常驻预留一条 `HANDLE_STRIP_H`（8px）横条**，**不遮挡 dsh 输出统计**，且**常驻预留没有显隐跳动**；横杠离屏幕底边约 **2px**（iOS home-indicator 式）。横杠 3 秒无操作自动淡出（同滚动条逻辑），光标靠近底部时重新亮起。为掩盖「常驻横条让对话滚动容器略微变矮」的观感，对话消息滚动条改为**只显示滑块、透明轨道**（对齐 DeepSeek/Gemini）。**收起终端用面板顶部的小横杠**（拖动=调高、点击=收起），而不是这根入口横杠。头部不放终端按钮，保持简洁。
 - **键盘接管（默认）**：终端打开/切换标签/挂起恢复时**自动聚焦**，把键盘交给终端（以终端输入为准，避免 `Ctrl+C`/`Ctrl+U`/`Ctrl+A` 等被浏览器抢走）。**无需开关**：想释放就**点终端外面**（键盘交还浏览器），想再接管就**点终端**或重新打开/切换。
-- **已知限制（浏览器行为，不是 bug）**：`Ctrl+W`/`Cmd+W`（关标签页）、`Ctrl+T`、`Ctrl+L`、`F5/Ctrl+R`、`Ctrl+Shift+I` 等**窗口级**快捷键由浏览器 chrome 处理，**任何网页（本插件、xterm.js、VS Code Web、Secure Shell 等一切浏览器终端都一样）都无法拦截**——按下 `Ctrl+W` 会直接关掉浏览器标签页，终端根本收不到这个按键，shell 侧的 readline 绑定也救不回来。若只是想要「删前一个词」，可用 `Ctrl+U`（删整行）或尝试 `Alt+Backspace`（readline 的 backward-kill-word）。
+- **已知限制（浏览器行为，不是 bug）**：`Ctrl+W`/`Cmd+W`（关标签页）、`Ctrl+T`、`Ctrl+L`、`F5/Ctrl+R`、`Ctrl+Shift+I` 等**窗口级**快捷键由浏览器 chrome 处理，**任何网页都无法拦截**——本插件、xterm.js、VS Code Web、Secure Shell 等一切浏览器终端都一样。按下 `Ctrl+W` 会直接关掉浏览器标签页，按键根本到不了终端，shell 侧的 readline 绑定也无济于事。
+- **「删前一个词」**：Windows/Linux 上 `Ctrl+W` 被浏览器占用（关标签页），可改用 `Ctrl+U`（删整行）或 `Alt+Backspace`（backward-kill-word）；**macOS 不受此影响**——macOS 浏览器保留的是 `Cmd+W`，`Ctrl+W` 能正常进入终端。
 
 ## 安装
 

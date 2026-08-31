@@ -127,11 +127,11 @@ server → client:
 - 注意用 `ended`/`disposed` 标志去重，避免 exit 与 onclose/卸载时重复触发。
 
 ### 4.8 键盘接管（默认无需开关）
-- 目标：终端打开/切标签/挂起恢复时**自动聚焦**，让键盘以终端输入为准，避免 `Ctrl+C`/`Ctrl+U`/`Ctrl+A` 等被浏览器抢走（`Ctrl+W` 属窗口级保留快捷键——见下方「限制」——焦点再准也无法拦截，README 已把它从「可接管键」中划掉）。
+- 目标：终端打开/切标签/挂起恢复时**自动聚焦**，让键盘以终端输入为准，避免 `Ctrl+C`/`Ctrl+U`/`Ctrl+A` 等被浏览器抢走（`Ctrl+W`/`Cmd+W` 属窗口级保留快捷键——见下方「限制」——Win/Linux 上焦点再准也拦不住 `Ctrl+W`，README 已把它从「可接管键」中划掉）。
 - 实现：`TerminalView` 在**初始化完成后**（boot 建好 term 后 `if (active)` 用 `rAF` 聚焦一次）、**切到活动页**（`[active]` effect）、**尺寸变化/挂起恢复**（ResizeObserver）三处 `term.focus()`。方案 B：**默认接管、不设开关**。
 - 释放/接管：无需代码——**点终端外面**自然 `blur`（键盘回浏览器），**点终端**或**重新打开/切换**即 `focus()` 接管。
 - 曾考虑过「开关按钮/图钉/双击」等形式，因与终端极简表头风格冲突、且双击命中不稳定而放弃，改为默认接管。
-- **限制**：`Ctrl+T/W/L`、`Cmd+W`、`F5/Ctrl+R`、`Ctrl+Shift+I` 等**窗口级**快捷键由浏览器 chrome 处理，页面不可拦截；`attachCustomKeyEventHandler` 也只能影响「能到达 xterm 的按键」。
+- **限制**：`Ctrl+W`/`Cmd+W`（关标签页）、`Ctrl+T`、`Ctrl+L`、`F5/Ctrl+R`、`Ctrl+Shift+I` 等**窗口级**快捷键由浏览器 chrome 处理，**任何网页都无法拦截**（所有浏览器终端同理）——按键根本到不了 xterm，`attachCustomKeyEventHandler` 只能影响「能到达 xterm 的按键」，shell 侧 readline 绑定也无济于事。Win/Linux 上 `Ctrl+W` 被浏览器占用（关标签页），删前一词请用 `Ctrl+U` 或 `Alt+Backspace`；**macOS 浏览器保留的是 `Cmd+W`，`Ctrl+W` 可正常进终端**。
 
 ## 5. 踩坑记录
 
