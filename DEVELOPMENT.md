@@ -1,4 +1,4 @@
-# DEVELOPMENT — @yaha/dsh-terminal
+# DEVELOPMENT — @rsdgnchen/dsh-terminal
 
 面向开发者的内部文档：架构、文件职责、Host↔Client 协议、扩展点与踩坑。
 
@@ -10,13 +10,13 @@ DSH 插件 = 「Host 半（Node/Cordis，服务端）」+「Client 半（浏览�
 Browser (client.js)                           Server (index.js)
 ┌──────────────────────────────────────┐      ┌────────────────────────────────────────────┐
 │ xterm.js panel (shell.overlay)       │      │ webServer: registerUpgrade                 │
-│ - 1 tab = 1 xterm + 1 WebSocket      │ ───► │  /__yaha-terminal/ws                       │
+│ - 1 tab = 1 xterm + 1 WebSocket      │ ───► │  /__rsdgnchen-terminal/ws                  │
 │ - theme adaptation                   │ ◄─── │ - WebSocketServer(noServer)                │
 │ - suspend / close state              │      │ - spawn 1 node-pty per connection          │
 └──────────────────────────────────────┘      └────────────────────────────────────────────┘
 ```
 
-> 说明：左＝浏览器半（`client.js`），右＝服务端半（`index.js`）。`───►`＝客户端经 WebSocket 上行（`input`/`resize`/`kill`），`◄───`＝Host 下行（`output`/`exit`/`error`）。客户端每个标签一条 WS → Host 为其起一个 `$SHELL` PTY；另有静态资源路由 `/__yaha-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}` 与错误上报 `/__yaha-terminal/error`（POST）。
+> 说明：左＝浏览器半（`client.js`），右＝服务端半（`index.js`）。`───►`＝客户端经 WebSocket 上行（`input`/`resize`/`kill`），`◄───`＝Host 下行（`output`/`exit`/`error`）。客户端每个标签一条 WS → Host 为其起一个 `$SHELL` PTY；另有静态资源路由 `/__rsdgnchen-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}` 与错误上报 `/__rsdgnchen-terminal/error`（POST）。
 
 - **交互终端**：每标签页一个 WebSocket 连接 → Host 为其起一个 `$SHELL` 的 PTY，双向流式。
 - **UI 挂载点**：注册进 `shell.overlay`（list 槽，additive），不替换任何现有内容。
@@ -27,7 +27,7 @@ Browser (client.js)                           Server (index.js)
 | 文件 | 角色 | 要点 |
 |---|---|---|
 | `package.json` | 插件清单 | `dsh.bundle.patch=./cordis.patch.yml`；`dsh.client.inject=['@deepseek-ai/dsh-client-runtime']`；`exports['./client']=./src/client.js`（浏览器 bundle 通过该 subpath 暴露） |
-| `cordis.patch.yml` | bundle 层 | 向配置树 `insert` 一行 `{id: dsh-yaha-terminal, name: '@yaha/dsh-terminal'}` |
+| `cordis.patch.yml` | bundle 层 | 向配置树 `insert` 一行 `{id: dsh-rsdgnchen-terminal, name: '@rsdgnchen/dsh-terminal'}` |
 | `src/index.js` | Host | Cordis bundle 规则：named exports `apply/inject/name`。加载 node-pty、ws；注册 WS 升级路由 + 静态资源 + 错误日志路由 |
 | `src/client.js` | 浏览器 | `window.__ModuleLoader__.load({id, factory})`；factory 接收 `require`，返回 `{apply, inject:['slots']}`；无 JSX，纯 `React.createElement` |
 | `src/vendor/*` | 随插件分发 | xterm.js 5.5.0 UMD + `xterm.css` + `@xterm/addon-fit`，由 Host 以 no-cache 出流，客户端首次打开时按需加载 |
@@ -50,7 +50,7 @@ function loadModule(moduleName) {
 
 ### 3.2 WebSocket 会话
 
-- `WebSocketServer({ noServer: true })` 由 `registerUpgrade` 处理 `/__yaha-terminal/ws` 的握手。
+- `WebSocketServer({ noServer: true })` 由 `registerUpgrade` 处理 `/__rsdgnchen-terminal/ws` 的握手。
 - 每个 `connection` → `spawnSession(ws)`：`pty.spawn(process.env.SHELL||'bash', ['-l'], {name:'xterm-256color', cols:80, rows:24, cwd: env.PWD||env.HOME||cwd, env:{...env, TERM:'xterm-256color', COLORTERM:'truecolor'}})`。
 - **会话与连接 1:1**：连接建立即起 shell，连接关闭/`kill` 即销毁；绝不跨连接共享。
 - 输出 `term.onData` → `ws.send({type:'output', data})`（无 Host 侧输出上限，纯流式）。
@@ -78,13 +78,13 @@ server → client:
 
 ### 3.4 其它路由
 
-- `/__yaha-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}`：GET/HEAD，no-cache。
-- `/__yaha-terminal/error`：POST，客户端上报运行时错误，追加到 `$YAHA_TERMINAL_ERROR_LOG`（默认 `os.tmpdir()/yaha-terminal-errors.log`），便于诊断。
+- `/__rsdgnchen-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}`：GET/HEAD，no-cache。
+- `/__rsdgnchen-terminal/error`：POST，客户端上报运行时错误，追加到 `$RSDGNCHEN_TERMINAL_ERROR_LOG`（默认 `os.tmpdir()/rsdgnchen-terminal-errors.log`），便于诊断。
 
 ## 4. Client 侧（src/client.js）
 
 ### 4.1 UI 挂载
-- `apply(ctx)` 通过 `ctx.slots.inject('shell.overlay', () => ctx.slots.register({name:'shell.overlay', id:'yaha-terminal', order:40}, TerminalOverlay))` 注册一个 additive overlay entry。
+- `apply(ctx)` 通过 `ctx.slots.inject('shell.overlay', () => ctx.slots.register({name:'shell.overlay', id:'rsdgnchen-terminal', order:40}, TerminalOverlay))` 注册一个 additive overlay entry。
 - `inject: ['slots']`。
 
 ### 4.2 状态模型（TerminalOverlay 本地态）
@@ -137,7 +137,7 @@ server → client:
 
 1. **`t` 变量遮蔽（已踩过）**：`setTabs((t) => [...t, { title: t('title') ... }])` 里的 updater 形参 `t` 会遮蔽 i18n 的 `t()`，导致 `t('title')` 把**数组**当函数调用 → `TypeError: t is not a function`，整个 overlay entry 被错误边界摘掉（终端+按钮一起消失，需刷新）。**修复：updater 形参命名 `prev` 等，避免 `t`。** 所有回调里凡是要用 i18n `t()` 的，形参都不要叫 `t`。
 
-2. **错误上报工具**：client 里有 `TerminalErrorBoundary`（class 组件）+ `window 'error'/'unhandledrejection'` → `fetch('/__yaha-terminal/error')`。排查 UI 组件消失类问题时，先看 Host 记录的 `<tmpdir>/yaha-terminal-errors.log`。
+2. **错误上报工具**：client 里有 `TerminalErrorBoundary`（class 组件）+ `window 'error'/'unhandledrejection'` → `fetch('/__rsdgnchen-terminal/error')`。排查 UI 组件消失类问题时，先看 Host 记录的 `<tmpdir>/rsdgnchen-terminal-errors.log`。
 
 3. **隐藏标签不要用 `display:none`**：会让 xterm 容器塌成 0 尺寸；用 `visibility:hidden` 保尺寸。
 
@@ -156,12 +156,12 @@ server → client:
 
 ## 7. 构建 / 部署流程（本地）
 
-本插件以 `file:` 依赖被 profile 引用（`@yaha/dsh-terminal` → `file:$HOME/dsh/plugins/dsh-terminal`），profile 的 `node_modules/@yaha/dsh-terminal` 与源码**硬链接**（inode 相同），所以直接改 `$HOME/dsh/plugins/dsh-terminal/src/**` 即改到服务器加载的副本。
+本插件以 `file:` 依赖被 profile 引用（`@rsdgnchen/dsh-terminal` → `file:$HOME/dsh/plugins/dsh-terminal`），profile 的 `node_modules/@rsdgnchen/dsh-terminal` 与源码**硬链接**（inode 相同），所以直接改 `$HOME/dsh/plugins/dsh-terminal/src/**` 即改到服务器加载的副本。
 
 ```bash
 # 1) 若编辑器是「写临时文件再 rename 替换」，会断开硬链接——把改动重新放进 profile 副本：
 cp -f $HOME/dsh/plugins/dsh-terminal/src/client.js \
-      $HOME/.dsh/profiles/web/node_modules/@yaha/dsh-terminal/src/client.js
+      $HOME/.dsh/profiles/web/node_modules/@rsdgnchen/dsh-terminal/src/client.js
 
 # 2) 若修改了 package.json / cordis.patch.yml / bundle 结构，需要重新 add：
 dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal

@@ -1,16 +1,16 @@
-// dsh-yaha-terminal — Web 终端插件（Host 半 / 服务端）
+// dsh-rsdgnchen-terminal — Web 终端插件（Host 半 / 服务端）
 //
 // 提供两块能力：
-//   1. 一个 WebSocket 升级路由 /__yaha-terminal/ws：浏览器连接后即为该连接
+//   1. 一个 WebSocket 升级路由 /__rsdgnchen-terminal/ws：浏览器连接后即为该连接
 //      起一个真实系统交互终端（node-pty 起 $SHELL），双向流式：
 //         client→server: {type:'input',data} | {type:'resize',cols,rows} | {type:'kill'}
 //         server→client: {type:'ready',pid,cwd} | {type:'output',data}
 //                        | {type:'exit',exitCode,signal} | {type:'error',message}
 //     PTY 会话随连接建立/关闭，绝不跨连接共享（每浏览器标签页一个独立 shell）。
 //   2. 三个静态资源路由，提供 xterm.js 的浏览器端依赖（无需打包、无需联网）：
-//         /__yaha-terminal/vendor/xterm.js
-//         /__yaha-terminal/vendor/xterm.css
-//         /__yaha-terminal/vendor/addon-fit.js
+//         /__rsdgnchen-terminal/vendor/xterm.js
+//         /__rsdgnchen-terminal/vendor/xterm.css
+//         /__rsdgnchen-terminal/vendor/addon-fit.js
 //     这些文件随插件一起分发（src/vendor/*），由服务器以 no-cache 出流，
 //     客户端首次打开终端时按需加载。
 //
@@ -27,7 +27,7 @@ import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 
-const name = 'dsh-yaha-terminal'
+const name = 'dsh-rsdgnchen-terminal'
 const inject = []
 
 const require = createRequire(import.meta.url)
@@ -59,9 +59,9 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const vendorDir = path.join(here, 'vendor')
 
 const STATIC_FILES = [
-  { path: '/__yaha-terminal/vendor/xterm.js', file: 'xterm.js', type: 'text/javascript; charset=utf-8' },
-  { path: '/__yaha-terminal/vendor/xterm.css', file: 'xterm.css', type: 'text/css; charset=utf-8' },
-  { path: '/__yaha-terminal/vendor/addon-fit.js', file: 'addon-fit.js', type: 'text/javascript; charset=utf-8' },
+  { path: '/__rsdgnchen-terminal/vendor/xterm.js', file: 'xterm.js', type: 'text/javascript; charset=utf-8' },
+  { path: '/__rsdgnchen-terminal/vendor/xterm.css', file: 'xterm.css', type: 'text/css; charset=utf-8' },
+  { path: '/__rsdgnchen-terminal/vendor/addon-fit.js', file: 'addon-fit.js', type: 'text/javascript; charset=utf-8' },
 ]
 
 function serveStatic(file, type) {
@@ -89,7 +89,7 @@ function serveStatic(file, type) {
 }
 
 // 客户端上报的运行时错误（诊断用）：追加到固定文件，便于故障排查。
-const ERROR_LOG = process.env.YAHA_TERMINAL_ERROR_LOG || path.join(os.tmpdir(), 'yaha-terminal-errors.log')
+const ERROR_LOG = process.env.RSDGNCHEN_TERMINAL_ERROR_LOG || path.join(os.tmpdir(), 'rsdgnchen-terminal-errors.log')
 
 function serveErrorLog(req, res) {
   if (req.method !== 'POST') {
@@ -190,10 +190,10 @@ function apply(ctx) {
     }
 
     // 客户端运行时错误上报（诊断用）
-    host.register({ kind: 'exact', path: '/__yaha-terminal/error', handler: serveErrorLog })
+    host.register({ kind: 'exact', path: '/__rsdgnchen-terminal/error', handler: serveErrorLog })
 
     host.registerUpgrade({
-      path: '/__yaha-terminal/ws',
+      path: '/__rsdgnchen-terminal/ws',
       handler: (req, socket, head) => {
         wss.handleUpgrade(req, socket, head, (ws) => {
           wss.emit('connection', ws, req)

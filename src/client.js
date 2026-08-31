@@ -1,4 +1,4 @@
-// dsh-yaha-terminal — Web 终端插件（Client 半 / 浏览器）
+// dsh-rsdgnchen-terminal — Web 终端插件（Client 半 / 浏览器）
 //
 // 在右侧 8 列内做一个上下 8/2 分区：上方 8 是对话区，下方 2 是系统交互终端。
 // 通过对话区底部停靠的细条按钮弹出/隐藏（shell.overlay 的常驻把手），支持：
@@ -21,14 +21,14 @@
 // 主题 token。
 
 window.__ModuleLoader__.load({
-  id: '@yaha/dsh-terminal',
+  id: '@rsdgnchen/dsh-terminal',
   factory: (require) => {
     const React = require('react')
     const { useState, useEffect, useRef, useCallback } = React
 
     const OVERLAY_SLOT = 'shell.overlay'
-    const OVERLAY_ID = 'yaha-terminal'
-    const WS_PATH = '/__yaha-terminal/ws'
+    const OVERLAY_ID = 'rsdgnchen-terminal'
+    const WS_PATH = '/__rsdgnchen-terminal/ws'
 
     const TERM_MIN_H = 120
     const TERM_DEFAULT_H = 200
@@ -65,7 +65,7 @@ window.__ModuleLoader__.load({
     // --- 客户端运行时错误上报（诊断用） ---------------------------------------
     function reportError(name, data) {
       try {
-        fetch('/__yaha-terminal/error', {
+        fetch('/__rsdgnchen-terminal/error', {
           method: 'POST',
           headers: { 'content-type': 'text/plain' },
           body: name + '\n' + (typeof data === 'string' ? data : String(data)),
@@ -86,14 +86,14 @@ window.__ModuleLoader__.load({
     const SCROLL_CSS =
       '.xterm .xterm-viewport::-webkit-scrollbar{width:10px;height:10px}' +
       '.xterm .xterm-viewport::-webkit-scrollbar-thumb{background:transparent}' +
-      '.xterm .xterm-viewport.yaha-scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45))}' +
-      '.xterm .xterm-viewport.yaha-scroll::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
+      '.xterm .xterm-viewport.rsdgnchen-scroll::-webkit-scrollbar-thumb{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45))}' +
+      '.xterm .xterm-viewport.rsdgnchen-scroll::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
       '.xterm .xterm-viewport{scrollbar-width:thin;scrollbar-color:transparent transparent}' +
-      '.xterm .xterm-viewport.yaha-scroll{scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
-    if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@yaha/dsh-terminal/scrollbar"]')) {
+      '.xterm .xterm-viewport.rsdgnchen-scroll{scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
+    if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@rsdgnchen/dsh-terminal/scrollbar"]')) {
       const tag = document.createElement('style')
-      tag.dataset.plugin = '@yaha/dsh-terminal'
-      tag.dataset.pluginCss = '@yaha/dsh-terminal/scrollbar'
+      tag.dataset.plugin = '@rsdgnchen/dsh-terminal'
+      tag.dataset.pluginCss = '@rsdgnchen/dsh-terminal/scrollbar'
       tag.textContent = SCROLL_CSS
       document.head.appendChild(tag)
     }
@@ -113,10 +113,10 @@ window.__ModuleLoader__.load({
       CONV_SCROLL_PSEUDO('::-webkit-scrollbar-thumb') + '{background:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45));border-radius:999px;background-clip:padding-box;border:2px solid transparent}' +
       CONV_SCROLL_PSEUDO('::-webkit-scrollbar-thumb:hover') + '{background:var(--dsw-alias-scrollbar-bg-l1,rgba(128,128,128,.7))}' +
       CONV_SCROLL_SEL + '{scrollbar-color:var(--dsw-alias-scrollbar-bg-l2,rgba(128,128,128,.45)) transparent}'
-    if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@yaha/dsh-terminal/conv-scrollbar"]')) {
+    if (typeof document !== 'undefined' && !document.querySelector('style[data-plugin-css="@rsdgnchen/dsh-terminal/conv-scrollbar"]')) {
       const tag = document.createElement('style')
-      tag.dataset.plugin = '@yaha/dsh-terminal'
-      tag.dataset.pluginCss = '@yaha/dsh-terminal/conv-scrollbar'
+      tag.dataset.plugin = '@rsdgnchen/dsh-terminal'
+      tag.dataset.pluginCss = '@rsdgnchen/dsh-terminal/conv-scrollbar'
       tag.textContent = CONV_SCROLL_CSS
       document.head.appendChild(tag)
     }
@@ -204,9 +204,9 @@ window.__ModuleLoader__.load({
         const LINK = (h) => injectTag('link', { rel: 'stylesheet', href: h })
         const SCRIPT = (s) => injectTag('script', { src: s, async: 'true' })
         Promise.all([
-          LINK('/__yaha-terminal/vendor/xterm.css'),
-          SCRIPT('/__yaha-terminal/vendor/xterm.js'),
-          SCRIPT('/__yaha-terminal/vendor/addon-fit.js'),
+          LINK('/__rsdgnchen-terminal/vendor/xterm.css'),
+          SCRIPT('/__rsdgnchen-terminal/vendor/xterm.js'),
+          SCRIPT('/__rsdgnchen-terminal/vendor/addon-fit.js'),
         ]).then(() => {
           if (typeof window.Terminal !== 'function') {
             return reject(new Error('xterm not loaded'))
@@ -330,9 +330,9 @@ window.__ModuleLoader__.load({
             if (vp) {
               let hideTimer = null
               const kick = () => {
-                vp.classList.add('yaha-scroll')
+                vp.classList.add('rsdgnchen-scroll')
                 clearTimeout(hideTimer)
-                hideTimer = setTimeout(() => vp.classList.remove('yaha-scroll'), 3000)
+                hideTimer = setTimeout(() => vp.classList.remove('rsdgnchen-scroll'), 3000)
               }
               vp.addEventListener('wheel', kick, { passive: true })
               vp.addEventListener('touchstart', kick, { passive: true })
@@ -347,7 +347,7 @@ window.__ModuleLoader__.load({
                 vp.removeEventListener('touchmove', kick)
                 vp.removeEventListener('mousedown', kick)
                 vp.removeEventListener('pointerenter', kick)
-                vp.classList.remove('yaha-scroll')
+                vp.classList.remove('rsdgnchen-scroll')
               }
             }
 

@@ -1,8 +1,8 @@
-# @yaha/dsh-terminal
+# @rsdgnchen/dsh-terminal
 
 DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（对话区）内做上下 `8/2` 分区，上方 8 是对话，下方 2 是一个真实的系统 shell（node-pty 起 `$SHELL`，xterm.js 渲染）。底部用 **iOS 风格透明横杠**呼出终端；终端顶部的**小横杠**拖动可调高、**点击可收起**（等同 `−`）。
 
-插件名带 `yaha`，便于你在 `~/.dsh/plugins/` 下统一管理。
+插件名带 `rsdgnchen`，便于你在 `~/.dsh/plugins/` 下统一管理。
 
 ```
 ┌───────────┬────────────────────────────────┐
@@ -63,11 +63,11 @@ dsh plugin --profile web add file:$HOME/.dsh/plugins/dsh-terminal
 
 > 若你从源码目录直接安装，也可 `dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal`。
 
-安装后，profile 的 `package.json` 的 `dsh.profile.bundles` 会追加 `@yaha/dsh-terminal`，并把 `@yaha/dsh-terminal` 写入依赖。web 服务的 `cordis.patch.yml`（来自插件的 `cordis.patch.yml`）会插入一行：
+安装后，profile 的 `package.json` 的 `dsh.profile.bundles` 会追加 `@rsdgnchen/dsh-terminal`，并把 `@rsdgnchen/dsh-terminal` 写入依赖。web 服务的 `cordis.patch.yml`（来自插件的 `cordis.patch.yml`）会插入一行：
 
 ```yaml
-- id: dsh-yaha-terminal
-  name: '@yaha/dsh-terminal'
+- id: dsh-rsdgnchen-terminal
+  name: '@rsdgnchen/dsh-terminal'
 ```
 
 ### 生效
@@ -99,7 +99,7 @@ pm2 restart dsh-web      # 若服务由 pm2 托管（本项目如此）
 ```
 dsh-terminal/
 ├── package.json          # 插件清单：dsh.bundle.patch / dsh.client / exports
-├── cordis.patch.yml      # bundle 层：插入 dsh-yaha-terminal 行
+├── cordis.patch.yml      # bundle 层：插入 dsh-rsdgnchen-terminal 行
 └── src/
     ├── index.js          # Host 半：node-pty 会话 + WebSocket + 静态资源 + 错误日志
     ├── client.js         # 浏览器半：xterm 面板 + 标签页 + 双击重命名 + 明暗自适应 + 挂起/关闭

@@ -1,5 +1,5 @@
 {
-  "name": "@yaha/dsh-terminal",
+  "name": "@rsdgnchen/dsh-terminal",
   "version": "0.1.0",
   "description": "DSH Web 终端插件：右侧 8 列做上下 8/2 分区，下方 2 为系统交互终端（node-pty PTY + xterm.js），底部 iOS 风格透明横杠呼出，可拖拽调高、多标签、挂起/关闭。Host 侧 node-pty 起 $SHELL，经 WebSocket 双向流式；浏览器侧挂 xterm.js。发现入口：GitHub `dsh-plugin` 主题。",
   "type": "module",
