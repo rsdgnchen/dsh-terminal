@@ -18,6 +18,7 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 ## 特性
 
 - **真实系统终端**：Host 侧用 `node-pty` 起 `$SHELL`（默认 `SHELL` 环境变量，如 zsh/bash），支持颜色、作业控制、交互式程序（vim / less / top 等）。
+- **起始目录 = `$HOME`（可配置）**：新终端默认开在 `$HOME`；想要固定目录就设 `DSH_TERMINAL_CWD`（如 `DSH_TERMINAL_CWD=/srv/app`）。**刻意不读 `PWD`/`process.cwd()`**：插件跑在常驻服务里（pm2 / systemd），这两个值都是「服务被启动那一刻」的目录，会随启动位置漂移（从 `~/bin` 起 pm2，终端就全开在 `~/bin`）。
 - **上下 8/2 分区**：终端出现时，对话区高度真正被压缩（`center` 列加 `padding-bottom`），终端停靠在 `center` 列底部（不遮挡侧栏 / 详情列）。
 - **多终端标签页**：蓝色 `+` 新建标签，每个标签一个独立 shell 会话；切换标签**不销毁**会话（`visibility` 叠放，保持尺寸）。
 - **挂起 `−` / 关闭 `×`**：

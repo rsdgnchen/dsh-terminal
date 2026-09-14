@@ -120,9 +120,12 @@ function send(ws, msg) {
   }
 }
 
-// 默认工作目录：用户在服务器启动时的 PWD，否则 HOME，否则 cwd。
+// 默认工作目录：显式配置 > HOME > 进程 cwd。
+// 注意：不能信任 process.env.PWD —— 插件跑在常驻服务里（pm2/systemd 拉起），
+// PWD 是「服务被启动那一刻」的目录，会随启动位置漂移（例如从 ~/bin 起
+// pm2 后，每个终端都开在 ~/bin），而 process.cwd() 同样是那个目录。
 function defaultCwd() {
-  return process.env.PWD || process.env.HOME || process.cwd()
+  return process.env.DSH_TERMINAL_CWD || process.env.HOME || process.cwd()
 }
 
 function spawnSession(ws) {

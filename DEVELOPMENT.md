@@ -51,7 +51,8 @@ function loadModule(moduleName) {
 ### 3.2 WebSocket 会话
 
 - `WebSocketServer({ noServer: true })` 由 `registerUpgrade` 处理 `/__rsdgnchen-terminal/ws` 的握手。
-- 每个 `connection` → `spawnSession(ws)`：`pty.spawn(process.env.SHELL||'bash', ['-l'], {name:'xterm-256color', cols:80, rows:24, cwd: env.PWD||env.HOME||cwd, env:{...env, TERM:'xterm-256color', COLORTERM:'truecolor'}})`。
+- 每个 `connection` → `spawnSession(ws)`：`pty.spawn(process.env.SHELL||'bash', ['-l'], {name:'xterm-256color', cols:80, rows:24, cwd: defaultCwd(), env:{...env, TERM:'xterm-256color', COLORTERM:'truecolor'}})`。
+- `defaultCwd() = process.env.DSH_TERMINAL_CWD || process.env.HOME || process.cwd()`。**不要改回 `process.env.PWD`**：Host 半跑在常驻 web 服务里，`PWD` 与 `process.cwd()` 都是服务启动目录（pm2 的 `exec cwd`），不是用户此刻的目录；用它们会让终端默认目录随服务启动位置漂移。
 - **会话与连接 1:1**：连接建立即起 shell，连接关闭/`kill` 即销毁；绝不跨连接共享。
 - 输出 `term.onData` → `ws.send({type:'output', data})`（无 Host 侧输出上限，纯流式）。
 - `term.onExit` → 发送 `{type:'exit', exitCode, signal}`。
