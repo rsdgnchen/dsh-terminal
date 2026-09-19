@@ -41,6 +41,18 @@ window.__ModuleLoader__.load({
     // 让输出统计/内容盖不住把手，把手也不遮挡统计。常驻预留从而没有显隐跳动。
     const HANDLE_STRIP_H = 8
 
+    // 顶部拖拽命中区高度（不可见，只画一根 1px 线）。
+    const DRAG_BAR_H = 8
+    // 标签/按钮高度。
+    const TAB_ITEM_H = 22
+    // 标签栏：内容高 = TAB_ITEM_H，**下方再留 DRAG_BAR_H 的 padding**。
+    // 为什么：拖拽区那 8px 不可见，眼睛会把「拖拽区 + 标签栏」看成一条视觉带；
+    // 若标签在本行里垂直居中，它在整条带里就是「上 8+4 / 下 4」→ 看起来偏低 4px。
+    // 让内容正好占满本行、下留 8px，就得到「上 8 / 下 8」的对称结果。
+    // 本行总高 = TAB_ITEM_H + DRAG_BAR_H + 1px border = 31px，与改动前完全一致。
+    const TAB_ROW_H = TAB_ITEM_H
+    const TAB_ROW_PAD_BOTTOM = DRAG_BAR_H
+
     // --- 文案 ---------------------------------------------------------------
     const zhDict = {
       'open': '打开终端',
@@ -659,11 +671,14 @@ window.__ModuleLoader__.load({
       }, [tabs, activeId, onClose])
 
       const tabbarStyle = {
-        flex: 'none', height: 30, display: 'flex', alignItems: 'center', gap: 4,
-        padding: '0 6px', borderBottom: '1px solid ' + palette.border, overflowX: 'auto', overflowY: 'hidden',
+        // height = TAB_ITEM_H（内容正好放下标签）+ 下方 DRAG_BAR_H 的 padding，
+        // 于是标签上方是拖拽区 8px、下方是这 8px —— 在整条视觉带里真正居中。
+        flex: 'none', height: TAB_ROW_H, display: 'flex', alignItems: 'center', gap: 4,
+        padding: '0 6px ' + TAB_ROW_PAD_BOTTOM + 'px',
+        borderBottom: '1px solid ' + palette.border, overflowX: 'auto', overflowY: 'hidden',
       }
       const tabStyle = (on) => ({
-        display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, maxWidth: 160,
+        display: 'inline-flex', alignItems: 'center', gap: 6, height: TAB_ITEM_H, maxWidth: 160,
         padding: '0 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap', flex: 'none',
         background: on ? alpha(palette.accent, 0.16) : 'transparent',
         color: on ? palette.fg : palette.fg2,
@@ -737,7 +752,7 @@ window.__ModuleLoader__.load({
           title: lang() === 'en' ? 'Click to collapse · drag to resize' : '点击收起 · 拖动调整高度',
           'aria-label': t('minimize'),
           style: {
-            flex: 'none', height: 8, position: 'relative', cursor: 'row-resize', touchAction: 'none',
+            flex: 'none', height: DRAG_BAR_H, position: 'relative', cursor: 'row-resize', touchAction: 'none',
             background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
           },
         }, [
@@ -785,7 +800,7 @@ window.__ModuleLoader__.load({
             } }, '×'),
           ])),
           React.createElement('button', { key: 'add', type: 'button', title: t('new'), onClick: addTab, style: {
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, borderRadius: 6, flex: 'none',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: TAB_ITEM_H, height: TAB_ITEM_H, borderRadius: 6, flex: 'none',
             border: '1px dashed ' + palette.border, background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0,
           } }, '+'),
           React.createElement('div', { key: 'spacer', style: { flex: '1 1 auto' } }),
@@ -797,7 +812,7 @@ window.__ModuleLoader__.load({
             style: {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               border: 'none', background: 'transparent', color: palette.fg2, cursor: 'pointer',
-              padding: '0 4px', width: 22, height: 22, flex: 'none', marginLeft: 2,
+              padding: '0 4px', width: TAB_ITEM_H, height: TAB_ITEM_H, flex: 'none', marginLeft: 2,
             },
           }, maximized ? MaximizeIcon(true) : MaximizeIcon(false)),
           React.createElement('button', { key: 'minimize', type: 'button', onClick: onMinimize, title: t('minimize'), 'aria-label': t('minimize'), style: {

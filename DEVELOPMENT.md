@@ -127,6 +127,7 @@ if (rejection !== undefined) { rejectUpgrade(socket, rejection); return }
   - **悬停 / 拖拽中**（`barHot = barHover || barActive`）：线变 `accent` α0.75，把手亮到 α0.55 并加宽到 56（150ms 过渡）。这就是"静态干净、靠近就告诉你能抓"。
   - **纯触摸端**（`prefersNoHover()` = `matchMedia('(hover: none)')`）没有 hover，把手**常驻 α0.35**，否则细线无从发现。
   - 面板自身**不再有 `borderTop`**：顶部那根 1px 线就是边界，否则会叠成 2px。
+  - **标签栏必须把拖拽区算进"视觉居中"（踩过：用户报"标签靠下"）**：拖拽区不可见后，眼睛把「拖拽区 + 标签栏」当成**一条视觉带**。若标签仍在标签栏里 `alignItems:center`，留白是「上 8+4 / 下 4」→ 看起来偏低 4px。因此 `tabbarStyle` 用 `height: TAB_ITEM_H`(22) + `paddingBottom: DRAG_BAR_H`(8)：标签正好占满本行，上方拖拽区 8px、下方留白 8px → 对称。本行总高 22+8+1 = 31px 与改动前一致，`DRAG_BAR_H + 31 = 39px` 也不变（终端本体高度不动）。常量在文件顶部：`DRAG_BAR_H` / `TAB_ITEM_H` / `TAB_ROW_H` / `TAB_ROW_PAD_BOTTOM`——**改一个要连带看另一个**（二者相等才居中）。
 - **铺满 ⛶**：`maximized` 是**全局**态（不随会话变）。`toggleMaximize()` 把 `H` 设为 `getFrame().clientHeight - 2` 并记住 `restoreHRef = 上一次 H`；再点还原。`onResize`（拖拽条）里 `setMaximized(false)`——手动拖高度即退出铺满。图标是内联 SVG（向外/向内四角括号），不依赖字体字形。
 
 ### 4.3 布局测量
