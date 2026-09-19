@@ -678,6 +678,9 @@ window.__ModuleLoader__.load({
         borderBottom: '1px solid ' + palette.border, overflowX: 'auto', overflowY: 'hidden',
       }
       const tabStyle = (on) => ({
+        // boxSizing: border-box —— 标签有 1px 边框，content-box 下真实高度会是 22+2=24，
+        // 比本行(22)高 2px、上下各溢出 1px（量出来是 7/8 而不是 8/8）。用 border-box 钉死 22。
+        boxSizing: 'border-box',
         display: 'inline-flex', alignItems: 'center', gap: 6, height: TAB_ITEM_H, maxWidth: 160,
         padding: '0 8px', borderRadius: 6, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap', flex: 'none',
         background: on ? alpha(palette.accent, 0.16) : 'transparent',
@@ -800,6 +803,7 @@ window.__ModuleLoader__.load({
             } }, '×'),
           ])),
           React.createElement('button', { key: 'add', type: 'button', title: t('new'), onClick: addTab, style: {
+            boxSizing: 'border-box',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: TAB_ITEM_H, height: TAB_ITEM_H, borderRadius: 6, flex: 'none',
             border: '1px dashed ' + palette.border, background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0,
           } }, '+'),
@@ -812,6 +816,7 @@ window.__ModuleLoader__.load({
             style: {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               border: 'none', background: 'transparent', color: palette.fg2, cursor: 'pointer',
+              boxSizing: 'border-box',
               padding: '0 4px', width: TAB_ITEM_H, height: TAB_ITEM_H, flex: 'none', marginLeft: 2,
             },
           }, maximized ? MaximizeIcon(true) : MaximizeIcon(false)),
