@@ -28,8 +28,8 @@ Browser (client.js)                           Server (index.js)
 |---|---|---|
 | `package.json` | 插件清单 | `dsh.bundle.patch=./cordis.patch.yml`；`dsh.client.inject=['@deepseek-ai/dsh-client-runtime']`；`exports['./client']=./src/client.js`（浏览器 bundle 通过该 subpath 暴露） |
 | `cordis.patch.yml` | bundle 层 | 向配置树 `insert` 一行 `{id: dsh-rsdgnchen-terminal, name: '@rsdgnchen/dsh-terminal'}` |
-| `src/index.js` | Host | Cordis bundle 规则：named exports `apply/inject/name`。加载 node-pty、ws；注册 WS 升级路由 + 静态资源 + 错误日志路由 |
-| `src/client.js` | 浏览器 | `window.__ModuleLoader__.load({id, factory})`；factory 接收 `require`，返回 `{apply, inject:['slots']}`；无 JSX，纯 `React.createElement` |
+| `src/index.js` | Host | Cordis bundle 规则：named exports `apply/inject/name`。加载 node-pty、ws；注册 WS 升级路由（**含 Host/Origin + 登录态鉴权**）+ 静态资源 + 错误日志路由 |
+| `src/client.js` | 浏览器 | `window.__ModuleLoader__.load({id, factory})`；factory 接收 `require`，返回 `{apply, inject:['slots']}`；无 JSX，纯 `React.createElement`。**每会话一套面板**（`keys`）+ 会话 cwd + 铺满高度 |
 | `src/vendor/*` | 随插件分发 | xterm.js 5.5.0 UMD + `xterm.css` + `@xterm/addon-fit`，由 Host 以 no-cache 出流，客户端首次打开时按需加载 |
 
 ## 3. Host 侧（src/index.js）
@@ -81,10 +81,25 @@ server → client:
 
 > 说明：客户端「标签页」通过**每个标签各开一条 WS** 实现（每标签独立会话）。挂起面板时 WS 保持打开（面板不卸载），因此输出不丢；关闭面板/标签时 WS 关闭 → Host 杀对应 PTY。
 
-### 3.4 其它路由
+### 3.4 upgrade 鉴权（安全，别删）
 
-- `/__rsdgnchen-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}`：GET/HEAD，no-cache。
-- `/__rsdgnchen-terminal/error`：POST，客户端上报运行时错误，追加到 `$RSDGNCHEN_TERMINAL_ERROR_LOG`（默认 `os.tmpdir()/rsdgnchen-terminal-errors.log`），便于诊断。
+`webServer.registerUpgrade` **只按路径分发，不做任何鉴权**——落在原始 socket 上的请求谁都能连。因此 `registerUpgrade` 的 handler 第一件事是：
+
+```js
+const rejection = upgradeRejection(ctx, req)   // → 403 | 401 | undefined
+if (rejection !== undefined) { rejectUpgrade(socket, rejection); return }
+```
+
+- 主路径复用 `ctx.get('connection').requestRejection(req)`（`@deepseek-ai/dsh-client-connection` 的**公开**方法）：先 Host/Origin 围栏（403，含 DNS rebinding），再浏览器登录态校验（401，签名 cookie）。
+- `connection` 服务缺失时走**退化路径**：无 `host` 头 / `sec-fetch-site: cross-site` / `Origin.host !== Host` 一律 403；无 `Origin`（非浏览器客户端）放行。
+- 为什么必须挡：WebSocket **不受 CORS 限制**，浏览器里任意页面都能对 `ws://127.0.0.1:<port>` 发起连接；而本插件的 PTY **不受 DSH 沙箱约束**，等于把宿主机 shell 交出去。`ssh -L` 也挡不住——发起方是浏览器本身。
+- 为什么不会挡住正常使用：`isTrustedApiRequest` 对 **loopback 任意端口**都放行，鉴权 cookie 按 Host authority 签发，所以 `ssh -L 8080:127.0.0.1:3080` 这种场景照样通过。
+- 副作用：**不带 cookie 的脚本直连会 401**（本仓库自测探针要带上 `?token=` 换来的 `dsh-auth-*` cookie）。
+
+### 3.5 其它路由
+
+- `/__rsdgnchen-terminal/vendor/{xterm.js,xterm.css,addon-fit.js}`：GET/HEAD，no-cache。**未鉴权**（纯公开前端资源，无敏感信息）。
+- `/__rsdgnchen-terminal/error`：POST，客户端上报运行时错误，追加到 `$RSDGNCHEN_TERMINAL_ERROR_LOG`（默认 `os.tmpdir()/rsdgnchen-terminal-errors.log`），便于诊断。**未鉴权**（仅日志追加，风险低）。
 
 ## 4. Client 侧（src/client.js）
 
@@ -93,17 +108,22 @@ server → client:
 - `inject: ['slots']`。
 
 ### 4.2 状态模型（TerminalOverlay 本地态）
-面板用两个布尔区分「存在」与「可见」：
+面板用两个布尔区分「存在」与「可见」，另加一个 `keys` 表示**哪些会话有面板**（每会话一套标签）：
 
 | 状态 | `mounted` | `shown` | 效果 |
 |---|---|---|---|
-| 打开 | true | true | 面板可见（停靠 `center` 列底部）；仅显示面板，底部入口横杠隐藏 |
-| 挂起`−` | true | false | 面板 `display:none` 但**保留会话**；底部横杠＝恢复（品牌色点亮） |
-| 关闭`×` | false | false | 卸载面板，杀死全部会话；底部横杠＝打开 |
+| 打开 | true | true | 当前会话那套面板可见（停靠 `center` 列底部）；底部入口横杠隐藏 |
+| 挂起`−` | true | false | 全部门板 `display:none` 但**保留会话**；底部横杠＝恢复（品牌色点亮） |
+| 关闭`×` | false | false | 卸载全部门板，杀死全部会话（`keys` 一并清空）；底部横杠＝打开 |
 
+- `keys`（会话 key 数组，追加式）：`TerminalOverlay` 渲染 `keys.map(key => <TerminalPanel key={key} hidden={!shown || key !== activeKey} .../>)`。**别套只是 `display:none`，组件仍挂载 → WS/PTY 都活着**，切回来原样恢复（输出继续累积）。
+- `activeKey` 来自 `useSessionKey(sessionKey, subscribe)`：`sessionKey()` 读 `ctx.sessions.list.getSnapshot().current`；`subscribe()` 挂在 `list.subscribe` 上，会话一变就 `setState` → 换套。取不到服务时退化成常量 `NO_SESSION_KEY`（单面板，等同旧行为）。
+- **自动补面板**：`mounted && shown` 期间切换会话 → 该会话若还没有面板就自动建一个（首个标签落在它的 cwd 里）。因此「面板开着切 N 个会话」会留下 N 个后台 shell，`×` 才一次性释放。
+- **退出语义**：当前会话最后一个标签退出 → `onClose()` 关闭**整个**面板（连带其他会话的后台终端）。这样也避开了「退出后又被自动补面板重新拉起」的循环。
 - 压缩对话区：给 `center` 列设 `padding-bottom = (shown ? H : HANDLE_STRIP_H)`（`useEffect` 依赖 `[shown, H]`）——终端展开时用面板高度 H；收起态**常驻**预留 `HANDLE_STRIP_H`（8px）横条（不挡输出统计），常驻预留**没有显隐跳动**（对比此前「显时预留/隐时置 0」的条件做法）。该横条会让对话滚动容器略微变矮，故把对话消息滚动条改为**只显示滑块、透明轨道**（`CONV_SCROLL_CSS`，施加于 `.Md3f7G_scroll, .wSkVaW_scrollBody`，二者为 dsh 当前构建的 module-scoped 哈希类名），底部空隙不再露出「轨道缺失」。**关键**：类选择器列表里的每个 `::-webkit-scrollbar-*` 选择器必须各自带上伪元素后缀（用 `CONV_SCROLL_PSEUDO` 逐个子选择器拼接），否则逗号会拆出「整段元素」选择器（如 `.Md3f7G_scroll{width:8px}`）把容器压成 8px 宽。
 - 底部入口是 `FloatOpenButton`：一根 **iOS 主屏指示条风格的半透明横杠**（`left=sidebar / right=details`，位于底部预留横条内、离底边约 2px），**上滑**（或轻点/回车）**打开**终端；挂起态用品牌色点亮、普通态用次级文字色压暗。定位容器 `pointerEvents:none` 不拦截对话内容，只有横杠本体（156×5 触摸区）接收指针事件。为避免挡住 dsh 输出统计，**3 秒无操作自动淡出**（`opacity` + `pointerEvents:none`），光标靠近 frame 底部（`clientY ≥ rect.bottom - 56`）或与把手交互时重新亮起并重置计时。
 - **面板顶部小横杠（拖拽条）** = 拖动调高 + 点击收起：`onPointerDown` 里位移 `≤5px` 视为轻点，`onUp` 里未拖动则触发 `onMinimize()`（等同 `−`，保留会话）；超过 5px 才算拖动并 `onResize`。`title`/`aria-label` 提示「点击收起 · 拖动调整高度」。
+- **铺满 ⛶**：`maximized` 是**全局**态（不随会话变）。`toggleMaximize()` 把 `H` 设为 `getFrame().clientHeight - 2` 并记住 `restoreHRef = 上一次 H`；再点还原。`onResize`（拖拽条）里 `setMaximized(false)`——手动拖高度即退出铺满。图标是内联 SVG（向外/向内四角括号），不依赖字体字形。
 
 ### 4.3 布局测量
 - `getOverlayLayer()` = `document.querySelector('[data-shell-overlay]')`；其 `.parentElement` 即 AppFrame。
@@ -160,6 +180,8 @@ server → client:
 6. **CSS 逗号会把「伪元素」拆成「整段元素」选择器（已踩过，曾把整个页面布局搞崩）**：`.Md3f7G_scroll, .wSkVaW_scrollBody::-webkit-scrollbar{width:8px}` 会被逗号拆成「`.Md3f7G_scroll`（整段） **或** `.wSkVaW_scrollBody::-webkit-scrollbar`」，于是 `width:8px` 作用到**整个消息容器**，把它压成 8px 宽 → 每行单字母、页面走样。**修复：每个 `::-webkit-scrollbar-*` 选择器必须各自带上伪元素后缀，再用 `CONV_SCROLL_PSEUDO(p)` 逐个子选择器拼接**，不要用「`选择器列表 + '::-webkit-scrollbar'`」这种写法。
 
 7. **`useState` 初始化器里不要读「还没执行到的 `useRef`/`const`」（已踩过）**：首个标签的 cwd 要在 `useState(() => [{..., cwd: readCwd()}])` 里现读，而 `readCwd()` 依赖 `const getCwdRef = useRef(getCwd)`。`const` 在 `useState` 之后声明时，初始化器执行期间 `getCwdRef` 仍在 **TDZ**，`ReferenceError` 被 `readCwd` 自己的 try/catch 吞掉 → **首个标签永远拿不到 cwd**（无报错、静默降级）。**修复：把 `useRef`/辅助函数声明在 `useState` 之前**；凡是「初始化器 + 静默 catch」的组合，都要用真实渲染（或 hook 顺序一致的测试）验证，别只看有没有抛错。
+
+8. **隐藏的终端面板既不 `fit()` 也不 `focus()`（多面板后必须做）**：每会话一套面板后，非当前会话的面板是 `display:none` → 容器尺寸为 0。此时 `fit.fit()` 会算出 0 尺寸的 cols/rows 并通过 `term.onResize` **把错的 PTY 尺寸发回 Host**；`term.focus()` 还会**把键盘焦点从可见面板抢走**。**修复：所有 fit/focus 入口（`[active]` effect、`ResizeObserver`）先判 `el.clientWidth && el.clientHeight`**。注意别把 `ResizeObserver` 的守卫删掉：面板重新显示时尺寸恢复，正是靠它再次触发 re-fit。
 
 ## 6. 扩展点
 

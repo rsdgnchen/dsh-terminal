@@ -7,6 +7,8 @@
 //         server→client: {type:'ready',pid,cwd} | {type:'output',data}
 //                        | {type:'exit',exitCode,signal} | {type:'error',message}
 //     PTY 会话随连接建立/关闭，绝不跨连接共享（每浏览器标签页一个独立 shell）。
+//     升级请求先过 DSH 的 Host/Origin 围栏 + 浏览器鉴权（connection.requestRejection），
+//     未通过则回 401/403 并断开——registerUpgrade 本身不做鉴权，必须自己挡。
 //   2. 三个静态资源路由，提供 xterm.js 的浏览器端依赖（无需打包、无需联网）：
 //         /__rsdgnchen-terminal/vendor/xterm.js
 //         /__rsdgnchen-terminal/vendor/xterm.css
@@ -110,6 +112,40 @@ function serveErrorLog(req, res) {
     }
   })
   req.on('error', () => { try { res.destroy() } catch {} })
+}
+
+// --- upgrade 鉴权 -------------------------------------------------------------
+// webServer 的 registerUpgrade 只按路径分发、**不做任何鉴权**：落在原始 socket 上的
+// 请求谁都能连。若不复用 DSH 的检查，「任意网页」都能对 127.0.0.1:3080 起一个
+// *不受沙箱约束* 的 shell（WebSocket 不受 CORS 限制），ssh -L 也挡不住——发起方
+// 是浏览器本身。故复用 connection 服务的公开检查：
+//   requestRejection(req) → 403 非可信 Host/Origin（含 DNS rebinding）｜ 401 未鉴权
+// 它对 loopback 的任意端口都放行，且鉴权 cookie 按 Host authority 签发，所以
+// `ssh -L 8080:127.0.0.1:3080` 这种映射到别的本地端口也能正常通过。
+function upgradeRejection(ctx, req) {
+  const connection = ctx.get('connection')
+  if (connection && typeof connection.requestRejection === 'function') {
+    return connection.requestRejection(req)
+  }
+  // 退化路径（没有 connection 服务时）：至少做同源 / 非跨站校验。
+  const headers = req.headers || {}
+  if (!headers.host) return 403
+  if (headers['sec-fetch-site'] === 'cross-site') return 403
+  if (headers.origin === undefined) return undefined // 非浏览器客户端
+  try {
+    return new URL(headers.origin).host === headers.host ? undefined : 403
+  } catch {
+    return 403
+  }
+}
+
+// 在原始 socket 上回一个最小 HTTP 响应再断开（upgrade 阶段还没有 ws 对象）。
+function rejectUpgrade(socket, status) {
+  const reason = status === 401 ? 'Unauthorized' : 'Forbidden'
+  try {
+    socket.write(`HTTP/1.1 ${status} ${reason}\r\nconnection: close\r\ncontent-length: 0\r\n\r\n`)
+  } catch { /* 忽略 */ }
+  try { socket.destroy() } catch { /* 忽略 */ }
 }
 
 // --- PTY 会话 -----------------------------------------------------------------
@@ -219,6 +255,12 @@ function apply(ctx) {
     host.registerUpgrade({
       path: '/__rsdgnchen-terminal/ws',
       handler: (req, socket, head) => {
+        // 先过 DSH 的 Host/Origin 围栏 + 浏览器鉴权，再交出 socket。
+        const rejection = upgradeRejection(ctx, req)
+        if (rejection !== undefined) {
+          rejectUpgrade(socket, rejection)
+          return
+        }
         wss.handleUpgrade(req, socket, head, (ws) => {
           wss.emit('connection', ws, req)
         })

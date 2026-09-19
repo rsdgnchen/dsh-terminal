@@ -2,7 +2,8 @@
 //
 // 在右侧 8 列内做一个上下 8/2 分区：上方 8 是对话区，下方 2 是系统交互终端。
 // 通过对话区底部停靠的细条按钮弹出/隐藏（shell.overlay 的常驻把手），支持：
-//   多终端标签页（每标签独立会话，切换 / 挂起不销毁）、拖拽调高、明暗自适应。
+//   每会话一套标签（切会话自动换那套，别套仍在后台存活）、多标签页
+//   （每标签独立会话，切换 / 挂起不销毁）、拖拽调高、一键铺满、明暗自适应。
 // 终端本体是 shell.overlay 的一个 additive entry（不会替换任何现有内容）。
 // 打开时：
 //   1. 按 AppFrame 的 grid 列宽把终端停靠在 center 列底部（left/right 对齐，
@@ -10,10 +11,13 @@
 //   2. 给 center 列加 padding-bottom = (shown ? H : HANDLE_STRIP_H)，从而真正压缩
 //      对话区（上8下2）；底部常驻 HANDLE_STRIP_H 横条放把手、不挡输出统计；
 //   3. xterm.js 按需加载（Host 提供的 vendor 静态文件），连 WebSocket 双向流式；
+//      起始目录取当前会话的 cwd（Host 校验后使用）；
 //   4. 顶部拖拽条可调终端高度，点击（未拖动）收起终端（等同 −）；
+//      标题栏 ⛶ 一键铺满 / 还原高度；
 //      底部「透明横杠」（iOS 主屏指示条风格）上滑/轻点打开，挂起时用品牌色点亮。
-// 面板状态（TerminalOverlay 本地态）：mounted=面板在 DOM（保留会话）；
-//   shown=面板可见。挂起(−)=shown=false 但保留会话；关闭(×)=卸载并杀全部会话。
+// 面板状态（TerminalOverlay 本地态）：mounted=有会话面板块挂载（保留会话）；
+//   shown=面板可见；keys=已登记面板的会话。挂起(−)=shown=false 但保留会话；
+//   关闭(×)=卸载全部门板并杀全部会话。
 //
 // Bundle 格式（client-modules 协议）：classic script 注册 factory——
 // window.__ModuleLoader__.load({ id, factory })，factory 接收 require 并返回
@@ -44,6 +48,8 @@ window.__ModuleLoader__.load({
       'close': '关闭终端',
       'minimize': '挂起（保留会话）',
       'new': '新建终端',
+      'maximize': '铺满高度',
+      'restoreH': '还原高度',
     }
     const enDict = {
       'open': 'Open terminal',
@@ -51,6 +57,8 @@ window.__ModuleLoader__.load({
       'close': 'Close terminal',
       'minimize': 'Suspend (keep session)',
       'new': 'New terminal',
+      'maximize': 'Maximize height',
+      'restoreH': 'Restore height',
     }
     function lang() {
       if (typeof navigator === 'undefined') return 'zh'
@@ -62,30 +70,59 @@ window.__ModuleLoader__.load({
     }
     function t(k) { return (lang() === 'en' ? enDict : zhDict)[k] || k }
 
-    // --- 当前会话的工作目录 --------------------------------------------------
-    // 从 dsh-api-session-controller 的 client 服务（ctx.sessions）读当前选中会话
-    // 的 cwd（Host 下发的权威值，与核心终端的「Session workspace」同源）。
-    // 纯只读、可失败：服务未就绪 / 没有选中会话 / 新会话还没记录 cwd 时返回
-    // undefined，Host 收到后回退到默认目录。刻意不写进 inject：拿不到服务时
-    // 插件照常工作，而不是整个入口因依赖缺失而不挂载。
-    function currentSessionCwd(ctx) {
+    // --- 会话（id + 工作目录） -----------------------------------------------
+    // 从 dsh-api-session-controller 的 client 服务（ctx.sessions）读会话记录：
+    // id 用于「每会话一套标签」，cwd 用于「终端起始目录」（Host 下发的权威值，
+    // 与核心终端的「Session workspace」同源）。
+    // `wantedId` 缺省 = 当前选中会话；显式传入时读**那个**会话——后台面板里
+    // 新建标签必须用该面板自己会话的 cwd，而不是此刻选中的会话。
+    // 纯只读、可失败：服务未就绪 / 无此会话 → 两者皆 undefined（cwd 由 Host
+    // 回退到默认目录，id 退化成 NO_SESSION_KEY 这一个"无会话"面板）。
+    // 刻意不写进 inject：拿不到服务时插件照常挂载，而不是整个入口因依赖缺失而消失。
+    const NO_SESSION_KEY = '__no_session__'
+
+    function readSession(ctx, wantedId) {
       try {
         const sessions = ctx && typeof ctx.get === 'function' ? ctx.get('sessions') : null
         const list = sessions && sessions.list
         const snap = list && typeof list.getSnapshot === 'function' ? list.getSnapshot() : null
-        if (!snap) return undefined
-        const id = snap.current
-        if (!id) return undefined
+        if (!snap) return { id: undefined, cwd: undefined }
+        const id = wantedId || snap.current
+        if (!id) return { id: undefined, cwd: undefined }
         // 兼容两种 list 快照形状：{ids,byId} 与 {items}。
         let rec = snap.byId ? snap.byId[id] : undefined
         if (!rec && Array.isArray(snap.items)) {
           rec = snap.items.find((x) => x && (x.sessionId === id || x.id === id))
         }
         const cwd = rec && rec.cwd
-        return typeof cwd === 'string' && cwd ? cwd : undefined
+        return { id: String(id), cwd: typeof cwd === 'string' && cwd ? cwd : undefined }
       } catch {
-        return undefined
+        return { id: undefined, cwd: undefined }
       }
+    }
+
+    // 订阅会话列表变化（切换会话要即时换一套标签）。通知不带载荷：回调里重读快照。
+    // 服务/接口缺失时退化为 no-op 退订函数。
+    function subscribeSessions(ctx, fn) {
+      try {
+        const sessions = ctx && typeof ctx.get === 'function' ? ctx.get('sessions') : null
+        const list = sessions && sessions.list
+        if (list && typeof list.subscribe === 'function') {
+          const off = list.subscribe(fn)
+          return typeof off === 'function' ? off : () => {}
+        }
+      } catch { /* 忽略 */ }
+      return () => {}
+    }
+
+    // 当前会话 key 的响应式版本：订阅变化 → setState → 触发换面板。
+    function useSessionKey(sessionKey, subscribe) {
+      const [key, setKey] = useState(() => sessionKey())
+      useEffect(() => {
+        setKey(sessionKey())
+        return subscribe(() => setKey(sessionKey()))
+      }, [sessionKey, subscribe])
+      return key
     }
 
     // --- 客户端运行时错误上报（诊断用） ---------------------------------------
@@ -439,13 +476,16 @@ window.__ModuleLoader__.load({
       }, [palette])
 
       // 切换到本标签页时（尺寸变为有效）re-fit + 聚焦（方案 B：打开/切换即接管键盘）。
-      // 隐藏标签页尺寸为 0 不触发。
+      // 隐藏标签页尺寸为 0 不触发；**隐藏会话的面板**（display:none）同样跳过，
+      // 否则会在别的会话里 fit 出 0 尺寸并向 PTY 回传错的 cols/rows、还抢走焦点。
       useEffect(() => {
         if (!active) return
         const fit = fitRef.current
         const term = termRef.current
         if (!fit || !term) return
         const raf = requestAnimationFrame(() => {
+          const el = containerRef.current
+          if (!el || !el.clientWidth || !el.clientHeight) return
           try { fit.fit() } catch { /* 忽略 */ }
           try { term.focus() } catch { /* 忽略 */ }
         })
@@ -457,6 +497,9 @@ window.__ModuleLoader__.load({
         const el = containerRef.current
         if (!el) return
         const ro = new ResizeObserver(() => {
+          // 面板被隐藏（挂起 / 非当前会话）时尺寸为 0：既不 fit 也不抢焦点；
+          // 重新显示时尺寸恢复，本观察器会再次触发。
+          if (!el.clientWidth || !el.clientHeight) return
           const fit = fitRef.current
           const term = termRef.current
           if (fit && term) { try { fit.fit() } catch { /* 忽略 */ } }
@@ -469,13 +512,26 @@ window.__ModuleLoader__.load({
       return React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0, padding: '2px 4px 4px' } })
     }
 
-    // --- 终端面板（shell.overlay entry，弹出态） ------------------------------
-    // 支持多终端标签页：每个标签页一个独立 xterm + WebSocket + 宿主 PTY 会话，
-    // 切换标签页不销毁会话（其他标签页容器隐藏但保持挂载），活动页 re-fit。
-    function TerminalPanel(props) {
-      const { H, metrics, palette, onResize, onMinimize, onClose, hidden, getCwd } = props
+    // 铺满 / 还原图标：四角括号，向外=铺满、向内=还原（纯 SVG，不依赖字体字形）。
+    function MaximizeIcon(restore) {
+      const paths = restore
+        ? ['M1 4h3V1', 'M11 4H8V1', 'M11 8H8v3', 'M1 8h3v3']
+        : ['M1 4V1h3', 'M8 1h3v3', 'M11 8v3H8', 'M4 11H1V8']
+      return React.createElement('svg', {
+        width: 12, height: 12, viewBox: '0 0 12 12', fill: 'none', stroke: 'currentColor',
+        strokeWidth: 1.2, strokeLinecap: 'round', strokeLinejoin: 'round',
+        'aria-hidden': 'true', style: { display: 'block' },
+      }, paths.map((d, i) => React.createElement('path', { key: i, d })))
+    }
 
-      // 读一次当前会话 cwd（容错：getCwd 缺失/抛错都当作「无」）。用 ref 读取，
+    // --- 终端面板（shell.overlay entry，弹出态） ------------------------------
+    // 一个会话一个面板实例：每个实例持有自己的标签集合（切会话只隐藏，不销毁）。
+    // 每个标签 = 一个独立 xterm + WebSocket + 宿主 PTY 会话；切标签不销毁会话
+    // （其他标签容器隐藏但保持挂载），活动标签 re-fit。
+    function TerminalPanel(props) {
+      const { H, metrics, palette, onResize, onMinimize, onClose, hidden, getCwd, maximized, onToggleMaximize } = props
+
+      // 读一次「本面板所属会话」的 cwd（容错：getCwd 缺失/抛错都当作「无」）。用 ref 读取，
       // 避免把 getCwd 的 props 身份变化牵连进各 useCallback 依赖。
       // 必须声明在下面的 useState 之前：首个标签的 state 初始化器会立刻调用 readCwd()，
       // 否则 getCwdRef 还在 TDZ，异常被 try/catch 吞掉 → 首个标签永远拿不到 cwd。
@@ -663,6 +719,17 @@ window.__ModuleLoader__.load({
             border: '1px dashed ' + palette.border, background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 14, lineHeight: '18px', padding: 0,
           } }, '+'),
           React.createElement('div', { key: 'spacer', style: { flex: '1 1 auto' } }),
+          // 铺满 / 还原高度（复用同一份 H：铺满时 H = center 列可用高度，还原回到拖动前的高度）
+          React.createElement('button', {
+            key: 'maximize', type: 'button', onClick: onToggleMaximize,
+            title: maximized ? t('restoreH') : t('maximize'),
+            'aria-label': maximized ? t('restoreH') : t('maximize'),
+            style: {
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              border: 'none', background: 'transparent', color: palette.fg2, cursor: 'pointer',
+              padding: '0 4px', width: 22, height: 22, flex: 'none', marginLeft: 2,
+            },
+          }, maximized ? MaximizeIcon(true) : MaximizeIcon(false)),
           React.createElement('button', { key: 'minimize', type: 'button', onClick: onMinimize, title: t('minimize'), 'aria-label': t('minimize'), style: {
             border: 'none', background: 'transparent', color: palette.fg2, cursor: 'pointer', fontSize: 15, lineHeight: '18px', padding: '0 4px', flex: 'none', marginLeft: 2,
           } }, '−'),
@@ -838,17 +905,34 @@ window.__ModuleLoader__.load({
     }
 
     // --- shell.overlay 入口 --------------------------------------------------
-    // 面板状态：mounted=面板组件存在于 DOM（保留各标签会话）；shown=面板可见。
+    // 面板状态：mounted=至少有一个会话的面板挂载着（保留各标签会话）；shown=面板可见。
     //  - 打开：mounted+shown
-    //  - 挂起(−)：shown=false（隐藏但保留会话，输出继续写入 xterm）
-    //  - 关闭(×)：mounted=false+shown=false（卸载，杀死全部会话）
+    //  - 挂起(−)：shown=false（隐藏但保留全部会话，输出继续写入 xterm）
+    //  - 关闭(×)：mounted=false+keys=[]（卸载全部门板，杀死所有会话）
+    // 每会话一套标签：keys = 已登记面板的会话 key，只有当前会话那套可见。
+    // 切会话不销毁别套（display:none 但组件仍挂载 → WS 与 PTY 都活着），切回来原样恢复。
     function TerminalOverlay(props) {
-      const getCwd = props.getCwd
+      const { getCwdFor, sessionKey, subscribe } = props
       const { metrics } = useFrameMetrics()
       const palette = useAppPalette()
       const [mounted, setMounted] = useState(false)
       const [shown, setShown] = useState(false)
       const [H, setH] = useState(TERM_DEFAULT_H)
+      const [maximized, setMaximized] = useState(false)
+      const [keys, setKeys] = useState([])
+      const restoreHRef = useRef(TERM_DEFAULT_H)
+
+      const activeKey = useSessionKey(sessionKey, subscribe)
+
+      const ensureKey = useCallback((key) => {
+        setKeys((prev) => (prev.indexOf(key) >= 0 ? prev : [...prev, key]))
+      }, [])
+
+      // 面板打开/可见期间，保证「当前会话」有一套自己的标签面板（首次访问该会话时新建
+      // 一个终端，落在它的工作目录里）。
+      useEffect(() => {
+        if (mounted && shown) ensureKey(activeKey)
+      }, [mounted, shown, activeKey, ensureKey])
 
       // 收起态常驻预留 HANDLE_STRIP_H 横条（不遮输出统计，统一预留也没有显隐跳动）；
       // 终端展开时改用面板高度 H 压缩对话区。
@@ -860,32 +944,66 @@ window.__ModuleLoader__.load({
         return () => { center.style.paddingBottom = '' }
       }, [shown, H])
 
-      const openPanel = useCallback(() => { setMounted(true); setShown(true) }, [])
+      // 打开时同一次提交里就登记当前会话，避免先渲染出「空的」面板区域再补上。
+      const openPanel = useCallback(() => {
+        setMounted(true)
+        setShown(true)
+        ensureKey(activeKey)
+      }, [ensureKey, activeKey])
       const minimize = useCallback(() => { setShown(false) }, [])
-      const closePanel = useCallback(() => { setMounted(false); setShown(false) }, [])
+      const closePanel = useCallback(() => { setMounted(false); setShown(false); setKeys([]) }, [])
+
+      // 手动拖高度视为放弃「铺满」态；铺满时 H = center 列可用高度。
+      const resize = useCallback((h) => { setMaximized(false); setH(h) }, [])
+      const toggleMaximize = useCallback(() => {
+        if (maximized) {
+          setH(restoreHRef.current || TERM_DEFAULT_H)
+          setMaximized(false)
+          return
+        }
+        const frame = getFrame()
+        const avail = frame && frame.clientHeight
+          ? frame.clientHeight
+          : (typeof window !== 'undefined' ? window.innerHeight : TERM_MAX_H)
+        restoreHRef.current = H
+        setH(Math.max(TERM_MIN_H, Math.round(avail - 2)))
+        setMaximized(true)
+      }, [maximized, H])
 
       return React.createElement(React.Fragment, null,
         // 底部把手只在终端收起/未打开时显示：点击/上滑 = 打开。
         !shown ? React.createElement(FloatOpenButton, { metrics, palette, onClick: openPanel, minimized: mounted }) : null,
         mounted ? React.createElement(TerminalErrorBoundary, {
           onReport: (m) => reportError('ENTRY_ERROR', m),
-        }, React.createElement(TerminalPanel, {
+        }, keys.map((key) => React.createElement(TerminalPanel, {
+          key,
           H: H >= TERM_MIN_H ? H : TERM_DEFAULT_H,
           metrics,
           palette,
-          onResize: setH,
+          onResize: resize,
           onMinimize: minimize,
           onClose: closePanel,
-          hidden: !shown,
-          getCwd,
-        })) : null)
+          hidden: !shown || key !== activeKey,
+          // 每个面板绑到**自己那个会话**的 cwd：后台面板里按 + 新建标签时，
+          // 用的仍是该会话的目录，而不是此刻选中的会话。
+          getCwd: () => getCwdFor(key),
+          maximized,
+          onToggleMaximize: toggleMaximize,
+        }))) : null)
     }
 
     // --- apply ------------------------------------------------------------------
     function apply(ctx) {
-      // 稳定的 getCwd：每次「新建标签/首次打开面板」时现读当前会话的 cwd。
-      const getCwd = () => currentSessionCwd(ctx)
-      const Entry = () => React.createElement(TerminalOverlay, { getCwd })
+      // 三个稳定回调：会话变化靠订阅触发换套；cwd 按「传入的会话 key」读，
+      // 保证后台面板新建标签也用对它自己的会话目录。
+      const getCwdFor = (key) => {
+        const current = readSession(ctx)
+        if (!key || key === NO_SESSION_KEY || current.id === key) return current.cwd
+        return readSession(ctx, key).cwd
+      }
+      const sessionKey = () => readSession(ctx).id || NO_SESSION_KEY
+      const subscribe = (fn) => subscribeSessions(ctx, fn)
+      const Entry = () => React.createElement(TerminalOverlay, { getCwdFor, sessionKey, subscribe })
       ctx.slots.inject(OVERLAY_SLOT, () => ctx.slots.register({
         name: OVERLAY_SLOT,
         id: OVERLAY_ID,
