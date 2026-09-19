@@ -62,6 +62,32 @@ window.__ModuleLoader__.load({
     }
     function t(k) { return (lang() === 'en' ? enDict : zhDict)[k] || k }
 
+    // --- 当前会话的工作目录 --------------------------------------------------
+    // 从 dsh-api-session-controller 的 client 服务（ctx.sessions）读当前选中会话
+    // 的 cwd（Host 下发的权威值，与核心终端的「Session workspace」同源）。
+    // 纯只读、可失败：服务未就绪 / 没有选中会话 / 新会话还没记录 cwd 时返回
+    // undefined，Host 收到后回退到默认目录。刻意不写进 inject：拿不到服务时
+    // 插件照常工作，而不是整个入口因依赖缺失而不挂载。
+    function currentSessionCwd(ctx) {
+      try {
+        const sessions = ctx && typeof ctx.get === 'function' ? ctx.get('sessions') : null
+        const list = sessions && sessions.list
+        const snap = list && typeof list.getSnapshot === 'function' ? list.getSnapshot() : null
+        if (!snap) return undefined
+        const id = snap.current
+        if (!id) return undefined
+        // 兼容两种 list 快照形状：{ids,byId} 与 {items}。
+        let rec = snap.byId ? snap.byId[id] : undefined
+        if (!rec && Array.isArray(snap.items)) {
+          rec = snap.items.find((x) => x && (x.sessionId === id || x.id === id))
+        }
+        const cwd = rec && rec.cwd
+        return typeof cwd === 'string' && cwd ? cwd : undefined
+      } catch {
+        return undefined
+      }
+    }
+
     // --- 客户端运行时错误上报（诊断用） ---------------------------------------
     function reportError(name, data) {
       try {
@@ -272,6 +298,8 @@ window.__ModuleLoader__.load({
       paletteRef.current = palette
       const onExitRef = useRef(props.onExit)
       onExitRef.current = props.onExit
+      const onReadyRef = useRef(props.onReady)
+      onReadyRef.current = props.onReady
       const [status, setStatus] = useState('loading')
 
       useEffect(() => {
@@ -352,7 +380,10 @@ window.__ModuleLoader__.load({
             }
 
             const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-            ws = new WebSocket(proto + '://' + location.host + WS_PATH)
+            // 起始目录：把「本标签创建那一刻当前会话的 cwd」带给 Host（Host 校验后使用）。
+            // 无 cwd 时不带参数，Host 回退到 DSH_TERMINAL_CWD / $HOME。
+            const cwd = typeof props.cwd === 'string' && props.cwd ? props.cwd : ''
+            ws = new WebSocket(proto + '://' + location.host + WS_PATH + (cwd ? '?cwd=' + encodeURIComponent(cwd) : ''))
             wsRef.current = ws
             ws.onopen = () => {
               if (disposed) return
@@ -365,6 +396,12 @@ window.__ModuleLoader__.load({
               try { m = JSON.parse(e.data) } catch { return }
               if (!term) return
               if (m.type === 'output') term.write(m.data)
+              else if (m.type === 'ready') {
+                // Host 回报真正生效的起始目录（可能是回退值），用于标签提示。
+                if (typeof onReadyRef.current === 'function') {
+                  try { onReadyRef.current(m.cwd) } catch { /* 忽略 */ }
+                }
+              }
               else if (m.type === 'error') term.write('\r\n\x1b[31m' + String(m.message || '') + '\x1b[0m\r\n')
               else if (m.type === 'exit') handleEnded()
             }
@@ -436,8 +473,24 @@ window.__ModuleLoader__.load({
     // 支持多终端标签页：每个标签页一个独立 xterm + WebSocket + 宿主 PTY 会话，
     // 切换标签页不销毁会话（其他标签页容器隐藏但保持挂载），活动页 re-fit。
     function TerminalPanel(props) {
-      const { H, metrics, palette, onResize, onMinimize, onClose, hidden } = props
-      const [tabs, setTabs] = useState([{ id: 1, num: 1, title: 'Terminal 1' }])
+      const { H, metrics, palette, onResize, onMinimize, onClose, hidden, getCwd } = props
+
+      // 读一次当前会话 cwd（容错：getCwd 缺失/抛错都当作「无」）。用 ref 读取，
+      // 避免把 getCwd 的 props 身份变化牵连进各 useCallback 依赖。
+      // 必须声明在下面的 useState 之前：首个标签的 state 初始化器会立刻调用 readCwd()，
+      // 否则 getCwdRef 还在 TDZ，异常被 try/catch 吞掉 → 首个标签永远拿不到 cwd。
+      const getCwdRef = useRef(getCwd)
+      getCwdRef.current = getCwd
+      function readCwd() {
+        try {
+          const g = getCwdRef.current
+          return typeof g === 'function' ? g() : undefined
+        } catch { return undefined }
+      }
+
+      // 每个标签在「创建那一刻」冻结当前会话的工作目录：会话切换只影响之后新建的
+      // 标签，已在跑的 shell 不会被搬走（shell 的 cwd 只能由用户自己 cd 改变）。
+      const [tabs, setTabs] = useState(() => [{ id: 1, num: 1, title: 'Terminal 1', cwd: readCwd() }])
       const [activeId, setActiveId] = useState(1)
       const nextIdRef = useRef(2)
 
@@ -474,13 +527,20 @@ window.__ModuleLoader__.load({
 
       const addTab = useCallback(() => {
         const id = nextIdRef.current++
+        const cwd = readCwd()
         // 注意：updater 形参不能叫 "t"，否则会遮蔽 i18n 的 t()，t('title') 会调数组导致报错。
         setTabs((prev) => {
           const num = nextNum(prev)
-          return [...prev, { id, num, title: 'Terminal ' + num }]
+          return [...prev, { id, num, title: 'Terminal ' + num, cwd }]
         })
         setActiveId(id)
       }, [nextNum])
+
+      // Host 回报真正生效的起始目录（可能是回退到 $HOME），写回标签用于悬停提示。
+      const handleReady = useCallback((id, cwd) => {
+        if (typeof cwd !== 'string' || !cwd) return
+        setTabs((prev) => prev.map((x) => (x.id === id ? { ...x, cwd } : x)))
+      }, [])
 
       const closeTab = useCallback((id) => {
         const idx = tabs.findIndex((x) => x.id === id)
@@ -577,7 +637,7 @@ window.__ModuleLoader__.load({
         // 标签栏
         React.createElement('div', { key: 'tabs', style: tabbarStyle }, [
           ...tabs.map((tab) => React.createElement('div', {
-            key: 'tab-' + tab.id, onClick: () => setActiveId(tab.id), title: editingId === tab.id ? undefined : tab.title, style: tabStyle(tab.id === activeId),
+            key: 'tab-' + tab.id, onClick: () => setActiveId(tab.id), title: editingId === tab.id ? undefined : (tab.cwd ? tab.title + '\n' + tab.cwd : tab.title), style: tabStyle(tab.id === activeId),
           }, [
             React.createElement('span', { key: 'label', style: { display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 } },
               React.createElement('span', { style: { width: 7, height: 7, borderRadius: '50%', background: '#3fb950', display: 'inline-block', flex: 'none' } }),
@@ -616,7 +676,13 @@ window.__ModuleLoader__.load({
             position: 'absolute', inset: 0,
             visibility: tab.id === activeId ? 'visible' : 'hidden',
             zIndex: tab.id === activeId ? 1 : 0,
-          } }, React.createElement(TerminalView, { palette, active: tab.id === activeId, onExit: () => handleExit(tab.id) })))),
+          } }, React.createElement(TerminalView, {
+            palette,
+            active: tab.id === activeId,
+            cwd: tab.cwd,
+            onReady: (cwd) => handleReady(tab.id, cwd),
+            onExit: () => handleExit(tab.id),
+          })))),
       ])
     }
 
@@ -776,7 +842,8 @@ window.__ModuleLoader__.load({
     //  - 打开：mounted+shown
     //  - 挂起(−)：shown=false（隐藏但保留会话，输出继续写入 xterm）
     //  - 关闭(×)：mounted=false+shown=false（卸载，杀死全部会话）
-    function TerminalOverlay() {
+    function TerminalOverlay(props) {
+      const getCwd = props.getCwd
       const { metrics } = useFrameMetrics()
       const palette = useAppPalette()
       const [mounted, setMounted] = useState(false)
@@ -810,16 +877,20 @@ window.__ModuleLoader__.load({
           onMinimize: minimize,
           onClose: closePanel,
           hidden: !shown,
+          getCwd,
         })) : null)
     }
 
     // --- apply ------------------------------------------------------------------
     function apply(ctx) {
+      // 稳定的 getCwd：每次「新建标签/首次打开面板」时现读当前会话的 cwd。
+      const getCwd = () => currentSessionCwd(ctx)
+      const Entry = () => React.createElement(TerminalOverlay, { getCwd })
       ctx.slots.inject(OVERLAY_SLOT, () => ctx.slots.register({
         name: OVERLAY_SLOT,
         id: OVERLAY_ID,
         order: 40,
-      }, TerminalOverlay))
+      }, Entry))
     }
 
     return { apply, inject: ['slots'] }

@@ -120,17 +120,34 @@ function send(ws, msg) {
   }
 }
 
-// 默认工作目录：显式配置 > HOME > 进程 cwd。
+// 起始目录 = 该标签创建那一刻「当前会话的工作目录」。
+// 客户端从 ctx.sessions 的当前会话快照里读出 Host 下发的 cwd，作为
+// /__rsdgnchen-terminal/ws?cwd=<encoded> 的查询参数带上来。
+//
+// 只信任「已存在的绝对目录」：解析失败 / 不存在 / 不是目录一律忽略，回退默认目录。
+// 顺带 realpath（解析符号链接），让 pty 的 cwd 与用户看到的字符串指向同一目录。
+function requestedCwd(req) {
+  try {
+    const raw = new URL(req.url || '/', 'http://localhost').searchParams.get('cwd')
+    if (!raw || !path.isAbsolute(raw)) return undefined
+    const real = fs.realpathSync(raw)
+    return fs.statSync(real).isDirectory() ? real : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// 目录优先级：显式配置（部署固定目录）> 会话工作目录 > HOME > 进程 cwd。
 // 注意：不能信任 process.env.PWD —— 插件跑在常驻服务里（pm2/systemd 拉起），
 // PWD 是「服务被启动那一刻」的目录，会随启动位置漂移（例如从 ~/bin 起
 // pm2 后，每个终端都开在 ~/bin），而 process.cwd() 同样是那个目录。
-function defaultCwd() {
-  return process.env.DSH_TERMINAL_CWD || process.env.HOME || process.cwd()
+function resolveCwd(sessionCwd) {
+  return process.env.DSH_TERMINAL_CWD || sessionCwd || process.env.HOME || process.cwd()
 }
 
-function spawnSession(ws) {
+function spawnSession(ws, sessionCwd) {
   const shell = process.env.SHELL || (process.platform === 'win32' ? 'cmd.exe' : 'bash')
-  const cwd = defaultCwd()
+  const cwd = resolveCwd(sessionCwd)
   const env = {
     ...process.env,
     TERM: 'xterm-256color',
@@ -144,6 +161,9 @@ function spawnSession(ws) {
     send(ws, { type: 'error', message: `spawn ${shell} failed: ${e && e.message ? e.message : e}` })
     return
   }
+
+  // 回报真正生效的起始目录（客户端据此显示标签提示；cwd 回退时也能看出实际值）。
+  send(ws, { type: 'ready', pid: term.pid, cwd })
 
   term.onData((data) => send(ws, { type: 'output', data }))
 
@@ -183,8 +203,9 @@ function spawnSession(ws) {
 
 function apply(ctx) {
   const wss = new WebSocketServer({ noServer: true })
-  wss.on('connection', (ws) => {
-    spawnSession(ws)
+  wss.on('connection', (ws, req) => {
+    // req 由 registerUpgrade 的 handleUpgrade 回传（含查询串，用于取会话工作目录）。
+    spawnSession(ws, requestedCwd(req))
   })
 
   function register(host) {

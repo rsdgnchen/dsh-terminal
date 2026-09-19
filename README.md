@@ -18,7 +18,10 @@ DeepSeek Harness Web 的**系统交互终端插件**：在页面右侧 8 列（�
 ## 特性
 
 - **真实系统终端**：Host 侧用 `node-pty` 起 `$SHELL`（默认 `SHELL` 环境变量，如 zsh/bash），支持颜色、作业控制、交互式程序（vim / less / top 等）。
-- **起始目录 = `$HOME`（可配置）**：新终端默认开在 `$HOME`；想要固定目录就设 `DSH_TERMINAL_CWD`（如 `DSH_TERMINAL_CWD=/srv/app`）。**刻意不读 `PWD`/`process.cwd()`**：插件跑在常驻服务里（pm2 / systemd），这两个值都是「服务被启动那一刻」的目录，会随启动位置漂移（从 `~/bin` 起 pm2，终端就全开在 `~/bin`）。
+- **起始目录 = 当前会话的工作目录**：新终端默认开在**你此刻所在会话的 cwd**（即该会话 workspace，与核心终端同源）。每个标签在**创建那一刻**取一次当前会话的目录：之后切换会话**不会**搬走已在运行的 shell（shell 的 cwd 只能自己 `cd`），但**新建标签 / 关掉面板重新打开**都会用那时的当前会话目录。标签悬停提示里能看到该终端真正生效的起始目录。
+  - 目录优先级：**`DSH_TERMINAL_CWD`（显式配置的固定目录）> 会话工作目录 > `$HOME` > 进程 cwd**。即设了 `DSH_TERMINAL_CWD` 就固定用它；没设才跟随会话；取不到会话目录（如服务未就绪、会话还没记录 cwd）才回退 `$HOME`。
+  - **刻意不读 `PWD`/`process.cwd()`**：插件跑在常驻服务里（pm2 / systemd），这两个值都是「服务被启动那一刻」的目录，会随启动位置漂移（从 `~/bin` 起 pm2，终端就全开在 `~/bin`）。
+  - 客户端只把「已存在的绝对目录」带给 Host；Host 再 `realpath` + 校验是目录，非法值一律忽略并回退。
 - **上下 8/2 分区**：终端出现时，对话区高度真正被压缩（`center` 列加 `padding-bottom`），终端停靠在 `center` 列底部（不遮挡侧栏 / 详情列）。
 - **多终端标签页**：蓝色 `+` 新建标签，每个标签一个独立 shell 会话；切换标签**不销毁**会话（`visibility` 叠放，保持尺寸）。
 - **挂起 `−` / 关闭 `×`**：
@@ -78,15 +81,20 @@ dsh plugin --profile web add file:$HOME/.dsh/plugins/dsh-terminal
 - 因为客户端 bundle 需要在服务启动时重新组合，**需重启/重载 web 服务**：
 
 ```bash
-pm2 restart dsh-web      # 若服务由 pm2 托管（本项目如此）
+pm2 restart dsh          # 若服务由 pm2 托管（本机进程名是 dsh；脚本 ~/bin/dsh-web.sh）
 # 或重启 dsh web 进程
 ```
 
-> 若只改了 `src/client.js`：服务端对 client bundle 是 `no-cache` 现读盘、并常驻 HMR 轮询（`dsh-client-hmr`），**刷新浏览器页面即可生效**，通常无需重启；改动 `package.json` / `cordis.patch.yml` / bundle 结构时才需要按上面重启。
+> **`src/client.js` 与 `src/index.js` 的生效方式不同**：
+> - 只改 `src/client.js`：服务端对 client bundle 是 `no-cache` 现读盘、并常驻 HMR 轮询（`dsh-client-hmr`），**刷新浏览器页面即可生效**，通常无需重启。
+> - 改了 `src/index.js`（Host 半，如本插件的起始目录逻辑）：**必须重启 web 服务**（Host 插件在启动时装载，没有 HMR）。
+> - 改了 `package.json` / `cordis.patch.yml` / bundle 结构：也需重启，且要重新安装依赖。
+>
+> 另注：profile 现在以 `github:rsdgnchen/dsh-terminal` 安装，**源码目录与 profile 实际加载的副本是两份文件**，改源码不会自动生效——部署流程见 `DEVELOPMENT.md` §7。
 
 ## 使用
 
-1. 在对话区底部**上滑那根透明横杠**（或轻点/回车）打开终端。
+1. 在对话区底部**上滑那根透明横杠**（或轻点/回车）打开终端。终端会在**当前会话的工作目录**里起 shell（悬停标签可看到实际目录）。
 2. `+` 新建标签；点标签切换；**双击标签标题可改名**；`−` 挂起、`×` 关闭。
 3. 面板**顶部小横杠**：拖动=调整高度，**点击=收起终端**（等同 `−`）；向上滚动回看历史输出（5000 行）。
 4. `Ctrl+D` 退出当前 shell（会话结束 → 自动关闭该标签/面板）。
@@ -112,6 +120,8 @@ dsh-terminal/
 ## 常见问题
 
 - **新建标签报错/终端消失**：见 `DEVELOPMENT.md` 的「t 变量遮蔽」一节——新增标签的 updater 形参不能叫 `t`。
+- **终端没开在会话目录，而是 `$HOME`**：说明客户端没读到当前会话的 cwd（会话列表未就绪，或该会话还没记录 cwd）——Host 按优先级回退到了 `$HOME`。重开面板/新建标签即可；想固定某个目录就给 web 服务设 `DSH_TERMINAL_CWD`（它会压过会话目录）。
+- **切换会话后终端没跟着换目录**：这是刻意行为。每个标签在**创建时**冻结目录，切换会话只影响之后新建的标签（已在运行的 shell 不会被搬走，否则你手敲的 `cd`、跑着的进程都会被打断）。
 - **终端没有颜色/太暗**：明暗自适应依赖应用主题；若自定义了其它主题，可在 `src/client.js` 的 `buildPalette()` 里补充对应 token。
 - **想改回看行数**：`src/client.js` 中 `scrollback: 5000`。
 

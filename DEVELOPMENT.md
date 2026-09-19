@@ -51,8 +51,11 @@ function loadModule(moduleName) {
 ### 3.2 WebSocket 会话
 
 - `WebSocketServer({ noServer: true })` 由 `registerUpgrade` 处理 `/__rsdgnchen-terminal/ws` 的握手。
-- 每个 `connection` → `spawnSession(ws)`：`pty.spawn(process.env.SHELL||'bash', ['-l'], {name:'xterm-256color', cols:80, rows:24, cwd: defaultCwd(), env:{...env, TERM:'xterm-256color', COLORTERM:'truecolor'}})`。
-- `defaultCwd() = process.env.DSH_TERMINAL_CWD || process.env.HOME || process.cwd()`。**不要改回 `process.env.PWD`**：Host 半跑在常驻 web 服务里，`PWD` 与 `process.cwd()` 都是服务启动目录（pm2 的 `exec cwd`），不是用户此刻的目录；用它们会让终端默认目录随服务启动位置漂移。
+- 每个 `connection` → `spawnSession(ws, requestedCwd(req))`：`pty.spawn(process.env.SHELL||'bash', ['-l'], {name:'xterm-256color', cols:80, rows:24, cwd, env:{...env, TERM:'xterm-256color', COLORTERM:'truecolor'}})`。
+- **起始目录 = 当前会话的工作目录**：客户端把当前会话的 cwd 作为 `?cwd=<encoded>` 查询串带上；`requestedCwd(req)` 用 `new URL(req.url, base).searchParams.get('cwd')` 取值，**只接受「绝对路径 + `realpathSync` 成功 + 是目录」**，否则返回 `undefined`（连同查询串缺失/畸形一起回退）。
+- `resolveCwd(sessionCwd) = process.env.DSH_TERMINAL_CWD || sessionCwd || process.env.HOME || process.cwd()`：**显式配置 > 会话目录 > HOME > 进程 cwd**。设了 `DSH_TERMINAL_CWD` 就固定用它（部署级固定目录，压过会话目录）。
+- **不要改回 `process.env.PWD`**：Host 半跑在常驻 web 服务里，`PWD` 与 `process.cwd()` 都是服务启动目录（pm2 的 `exec cwd`），不是用户此刻的目录；用它们会让终端默认目录随服务启动位置漂移。
+- spawn 成功后立即下发 `{type:'ready', pid, cwd}`（`cwd` 是**真正生效**的目录，可能是回退值），供客户端显示标签提示。
 - **会话与连接 1:1**：连接建立即起 shell，连接关闭/`kill` 即销毁；绝不跨连接共享。
 - 输出 `term.onData` → `ws.send({type:'output', data})`（无 Host 侧输出上限，纯流式）。
 - `term.onExit` → 发送 `{type:'exit', exitCode, signal}`。
@@ -71,6 +74,7 @@ server → client:
 
 | type | 字段 | 说明 |
 |---|---|---|
+| `ready` | `pid, cwd` | 会话已起：进程号 + **真正生效的起始目录**（可能是回退值） |
 | `output` | `data:string` | PTY 输出增量 |
 | `exit` | `exitCode, signal` | 顶层进程退出 |
 | `error` | `message` | spawn 等失败 |
@@ -122,12 +126,19 @@ server → client:
 - 多标签**叠放**：`position:absolute; inset:0`，活动页 `visibility:visible; z-index:1`，其余 `visibility:hidden; z-index:0`（**保留尺寸**，切回不丢失、不重排）。
 - **双击重命名**：`editingId / editText` + `startEdit/commitEdit/cancelEdit`；双击标题变 `<input>`（`useEffect` 聚焦+全选），`Enter`/失焦保存（`commitEdit` 只改 `title`，不动 `num`），`Esc` 取消。
 
-### 4.7 会话结束自动关闭
+### 4.7 每标签的起始目录（会话 cwd）
+- `currentSessionCwd(ctx)`：`ctx.get('sessions')`（`dsh-api-session-controller` 的 client 服务）→ `sessions.list.getSnapshot()` → 取 `snapshot.current` 会话记录里的 `cwd`（Host 下发的权威值，**与核心终端的「Session workspace」同源**）。兼容 `{ids,byId}` 与 `{items}` 两种快照形状；整段 try/catch，**取不到就返回 `undefined`**（Host 回退 `$HOME`）。
+- **刻意不写进 `inject`**：用 `ctx.get()` 动态取服务，服务未就绪/缺失时插件照常挂载并回退，而不是整个 overlay 入口因依赖缺失而不注册。
+- 数据流：`apply(ctx)` 里造一个稳定的 `getCwd` → `TerminalOverlay` 透传给 `TerminalPanel` → **首个标签的 `useState` 初始化器与 `addTab()`** 各读一次，把 cwd **冻结进该标签**（`{id,num,title,cwd}`）→ `TerminalView` 在创建 WS 时带上 `?cwd=...`。
+- 语义：**创建时取一次**。切换会话不会搬走已在跑的 shell；新建标签 / 关掉面板重开会用那时的当前会话目录。
+- `TerminalView` 收到 `{type:'ready'}` → `onReady(cwd)` → 写回 `tab.cwd`，标签悬停提示显示**实际生效**的目录（回退时也能看出来）。
+
+### 4.8 会话结束自动关闭
 - `TerminalView` 里 `handleEnded()`：收到 `{type:'exit'}` 或 WS `onclose` → 触发 `onExit(tabId)`（`onExitRef`）→ `TerminalPanel.handleExit(tabId)`。
 - `handleExit`：移除该标签；若已是最后一个标签则关闭整个面板（`onClose`），否则切到相邻标签。**不写任何「已退出/关闭」驻留提示。**
 - 注意用 `ended`/`disposed` 标志去重，避免 exit 与 onclose/卸载时重复触发。
 
-### 4.8 键盘接管（默认无需开关）
+### 4.9 键盘接管（默认无需开关）
 - 目标：终端打开/切标签/挂起恢复时**自动聚焦**，让键盘以终端输入为准，避免 `Ctrl+C`/`Ctrl+U`/`Ctrl+A` 等被浏览器抢走（`Ctrl+W`/`Cmd+W` 属窗口级保留快捷键——见下方「限制」——Win/Linux 上焦点再准也拦不住 `Ctrl+W`，README 已把它从「可接管键」中划掉）。
 - 实现：`TerminalView` 在**初始化完成后**（boot 建好 term 后 `if (active)` 用 `rAF` 聚焦一次）、**切到活动页**（`[active]` effect）、**尺寸变化/挂起恢复**（ResizeObserver）三处 `term.focus()`。方案 B：**默认接管、不设开关**。
 - 释放/接管：无需代码——**点终端外面**自然 `blur`（键盘回浏览器），**点终端**或**重新打开/切换**即 `focus()` 接管。
@@ -148,6 +159,8 @@ server → client:
 
 6. **CSS 逗号会把「伪元素」拆成「整段元素」选择器（已踩过，曾把整个页面布局搞崩）**：`.Md3f7G_scroll, .wSkVaW_scrollBody::-webkit-scrollbar{width:8px}` 会被逗号拆成「`.Md3f7G_scroll`（整段） **或** `.wSkVaW_scrollBody::-webkit-scrollbar`」，于是 `width:8px` 作用到**整个消息容器**，把它压成 8px 宽 → 每行单字母、页面走样。**修复：每个 `::-webkit-scrollbar-*` 选择器必须各自带上伪元素后缀，再用 `CONV_SCROLL_PSEUDO(p)` 逐个子选择器拼接**，不要用「`选择器列表 + '::-webkit-scrollbar'`」这种写法。
 
+7. **`useState` 初始化器里不要读「还没执行到的 `useRef`/`const`」（已踩过）**：首个标签的 cwd 要在 `useState(() => [{..., cwd: readCwd()}])` 里现读，而 `readCwd()` 依赖 `const getCwdRef = useRef(getCwd)`。`const` 在 `useState` 之后声明时，初始化器执行期间 `getCwdRef` 仍在 **TDZ**，`ReferenceError` 被 `readCwd` 自己的 try/catch 吞掉 → **首个标签永远拿不到 cwd**（无报错、静默降级）。**修复：把 `useRef`/辅助函数声明在 `useState` 之前**；凡是「初始化器 + 静默 catch」的组合，都要用真实渲染（或 hook 顺序一致的测试）验证，别只看有没有抛错。
+
 ## 6. 扩展点
 
 - **改回看行数**：`client.js` `scrollback: 5000`。
@@ -157,23 +170,37 @@ server → client:
 
 ## 7. 构建 / 部署流程（本地）
 
-本插件以 `file:` 依赖被 profile 引用（`@rsdgnchen/dsh-terminal` → `file:$HOME/dsh/plugins/dsh-terminal`），profile 的 `node_modules/@rsdgnchen/dsh-terminal` 与源码**硬链接**（inode 相同），所以直接改 `$HOME/dsh/plugins/dsh-terminal/src/**` 即改到服务器加载的副本。
+> **先看 `AGENT-CONTEXT.md`**：profile 现在以 `github:rsdgnchen/dsh-terminal` 安装，**源码目录 ≠ profile 实际加载的副本**（加载的是 `~/.dsh/profiles/web/node_modules/@rsdgnchen/dsh-terminal`，与 `$HOME/dsh/plugins/dsh-terminal` 是两份文件），**改源码不会自动生效**。
+
+标准流程（走 GitHub）：
 
 ```bash
-# 1) 若编辑器是「写临时文件再 rename 替换」，会断开硬链接——把改动重新放进 profile 副本：
-cp -f $HOME/dsh/plugins/dsh-terminal/src/client.js \
-      $HOME/.dsh/profiles/web/node_modules/@rsdgnchen/dsh-terminal/src/client.js
-
-# 2) 若修改了 package.json / cordis.patch.yml / bundle 结构，需要重新 add：
-dsh plugin --profile web add file:$HOME/dsh/plugins/dsh-terminal
-
-# 3) 生效：
-#    - 仅改 src/client.js：刷新浏览器即可（服务端 no-cache 现读 + dsh-client-hmr 常驻轮询拼 bundle）。
-#    - 改了 bundle 结构 / 包清单：需重启 web 服务（客户端 bundle 在启动时重组）。
-pm2 restart dsh-web
+cd /home/yaha/dsh/plugins/dsh-terminal
+git add -A && git commit -m "你的说明" && git push     # 先 git status 确认有改动，避免 nothing to commit 让 && 短路
+cd ~/.dsh/profiles/web && pnpm update @rsdgnchen/dsh-terminal
+pm2 restart dsh          # 本机 pm2 进程名是 dsh（脚本 /home/yaha/bin/dsh-web.sh）
 ```
 
-> 备注：`$HOME/.dsh/plugins/dsh-terminal` 是另一份**独立副本**（历史部署位置），当前 profile 并不引用它；只有 `file:` 指向的 `$HOME/dsh/plugins/dsh-terminal` 才是生效源码，二选一改动时保持同步即可。
+不想走 GitHub（本地调试）时，直接把改动同步进 profile 副本更省事：
+
+```bash
+SRC=$HOME/dsh/plugins/dsh-terminal
+DST=$HOME/.dsh/profiles/web/node_modules/@rsdgnchen/dsh-terminal
+cp -f $SRC/src/index.js  $DST/src/index.js
+cp -f $SRC/src/client.js $DST/src/client.js
+pm2 restart dsh
+```
+
+> 改了 `package.json` / `cordis.patch.yml` / bundle 结构就不能只 `cp`，要用
+> `dsh plugin --profile web add ...` 重装（或先切回 `file:` 本地源）。
+
+生效范围：
+
+- **只有 `src/client.js` 变**：刷新浏览器即可（服务端对 client bundle 是 no-cache 现读 + `dsh-client-hmr` 轮询）。
+- **`src/index.js`（Host 半）或包清单变**：**必须重启 web 服务**（Host 插件在启动时装载，没有 HMR）。
+- 校验服务端实际下发的是哪一份：见 `AGENT-CONTEXT.md` 末尾的 `sha256sum` / boot 页组合 URL 检查。
+
+> `pm2 restart dsh` 会**中断正在进行的会话回合**（会话本身已持久化，可重新连接继续）。
 
 ## License
 
