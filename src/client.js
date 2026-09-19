@@ -512,6 +512,17 @@ window.__ModuleLoader__.load({
       return React.createElement('div', { ref: containerRef, style: { position: 'absolute', inset: 0, padding: '2px 4px 4px' } })
     }
 
+    // 触摸类设备（无 hover）判定：这类设备看不到「悬停显形」，把手必须常驻淡显。
+    // 失败一律当 false（鼠标端），行为与旧版一致。
+    function prefersNoHover() {
+      try {
+        return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+          && window.matchMedia('(hover: none)').matches
+      } catch {
+        return false
+      }
+    }
+
     // 铺满 / 还原图标：四角括号，向外=铺满、向内=还原（纯 SVG，不依赖字体字形）。
     function MaximizeIcon(restore) {
       const paths = restore
@@ -563,6 +574,7 @@ window.__ModuleLoader__.load({
         const startY = e.clientY
         const startH = H
         let moved = false
+        setBarActive(true)
         const onMove = (ev) => {
           // 位移 ≤5px 视为轻点；超过才算「拖动调整高度」。
           if (!moved && Math.abs(ev.clientY - startY) <= 5) return
@@ -574,6 +586,7 @@ window.__ModuleLoader__.load({
         const onUp = () => {
           window.removeEventListener('pointermove', onMove)
           window.removeEventListener('pointerup', onUp)
+          setBarActive(false)
           // 未发生拖动（点击/轻点）→ 收起终端（等同 −，保留会话）。
           if (!moved) onMinimize()
         }
@@ -640,6 +653,13 @@ window.__ModuleLoader__.load({
       const [editText, setEditText] = useState('')
       const editRef = useRef(null)
 
+      // --- 顶部拖拽条的外观状态 ----------------------------------------------
+      // noHover = 触摸类设备（没有 hover），把手需常驻淡显，否则细线无从发现。
+      const [barHover, setBarHover] = useState(false)
+      const [barActive, setBarActive] = useState(false)
+      const [noHover] = useState(() => prefersNoHover())
+      const barHot = barHover || barActive
+
       const startEdit = useCallback((id, current) => {
         setEditingId(id)
         setEditText(current)
@@ -673,7 +693,8 @@ window.__ModuleLoader__.load({
           display: hidden ? 'none' : 'flex',
           flexDirection: 'column',
           background: palette.bg,
-          borderTop: '1px solid ' + palette.border,
+          // 边界线由顶部拖拽条那根 1px 细线承担（hover 时会变品牌色），
+          // 所以这里**不再**加 borderTop，否则会叠成 2px。
           zIndex: 30,
           pointerEvents: 'auto',
           boxShadow: '0 -4px 18px rgba(0,0,0,.25)',
@@ -681,15 +702,41 @@ window.__ModuleLoader__.load({
         },
       }, [
         // 顶部拖拽条：拖动=调整高度，点击（未拖动）=收起终端（等同 −）。
+        // 视觉与命中区**解耦**（学官方 ui-layout 的 8px 隐形命中区）：
+        //   静态 = 1px 细线（面板边界色，安静不吵）；
+        //   鼠标进入 / 拖拽中 = 线亮成品牌色 + 中间把手浮出并加宽（可发现性）；
+        //   纯触摸端没有 hover，故把手常驻淡显。
+        // 命中区仍是 9px 高（比原来的 7px 条还大），并保留「点击收起」。
         React.createElement('div', {
           key: 'bar', onPointerDown: onPointerDown,
+          onPointerEnter: () => setBarHover(true),
+          onPointerLeave: () => setBarHover(false),
           title: lang() === 'en' ? 'Click to collapse · drag to resize' : '点击收起 · 拖动调整高度',
           'aria-label': t('minimize'),
           style: {
-            flex: 'none', height: 7, cursor: 'row-resize', touchAction: 'none',
-            background: alpha(palette.accent, 0.3), display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flex: 'none', height: 9, position: 'relative', cursor: 'row-resize', touchAction: 'none',
+            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
           },
-        }, React.createElement('div', { style: { width: 42, height: 4, borderRadius: 2, background: alpha(palette.fg2, 0.5) } })),
+        }, [
+          // 边界细线（静态只这一根；hover/拖拽时变品牌色）
+          React.createElement('div', {
+            key: 'line',
+            style: {
+              position: 'absolute', top: 0, left: 0, right: 0, height: 1,
+              background: barHot ? alpha(palette.accent, 0.75) : palette.border,
+              transition: 'background .15s ease',
+            },
+          }),
+          // 抓握把手（静态几乎不可见，hover/拖拽时亮起并加宽）
+          React.createElement('div', {
+            key: 'grip',
+            style: {
+              width: barHot ? 56 : 42, height: 4, borderRadius: 999,
+              background: alpha(palette.fg2, barHot ? 0.55 : (noHover ? 0.35 : 0.18)),
+              transition: 'width .15s ease, background .15s ease',
+            },
+          }),
+        ]),
         // 标签栏
         React.createElement('div', { key: 'tabs', style: tabbarStyle }, [
           ...tabs.map((tab) => React.createElement('div', {

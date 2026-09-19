@@ -122,7 +122,11 @@ if (rejection !== undefined) { rejectUpgrade(socket, rejection); return }
 - **退出语义**：当前会话最后一个标签退出 → `onClose()` 关闭**整个**面板（连带其他会话的后台终端）。这样也避开了「退出后又被自动补面板重新拉起」的循环。
 - 压缩对话区：给 `center` 列设 `padding-bottom = (shown ? H : HANDLE_STRIP_H)`（`useEffect` 依赖 `[shown, H]`）——终端展开时用面板高度 H；收起态**常驻**预留 `HANDLE_STRIP_H`（8px）横条（不挡输出统计），常驻预留**没有显隐跳动**（对比此前「显时预留/隐时置 0」的条件做法）。该横条会让对话滚动容器略微变矮，故把对话消息滚动条改为**只显示滑块、透明轨道**（`CONV_SCROLL_CSS`，施加于 `.Md3f7G_scroll, .wSkVaW_scrollBody`，二者为 dsh 当前构建的 module-scoped 哈希类名），底部空隙不再露出「轨道缺失」。**关键**：类选择器列表里的每个 `::-webkit-scrollbar-*` 选择器必须各自带上伪元素后缀（用 `CONV_SCROLL_PSEUDO` 逐个子选择器拼接），否则逗号会拆出「整段元素」选择器（如 `.Md3f7G_scroll{width:8px}`）把容器压成 8px 宽。
 - 底部入口是 `FloatOpenButton`：一根 **iOS 主屏指示条风格的半透明横杠**（`left=sidebar / right=details`，位于底部预留横条内、离底边约 2px），**上滑**（或轻点/回车）**打开**终端；挂起态用品牌色点亮、普通态用次级文字色压暗。定位容器 `pointerEvents:none` 不拦截对话内容，只有横杠本体（156×5 触摸区）接收指针事件。为避免挡住 dsh 输出统计，**3 秒无操作自动淡出**（`opacity` + `pointerEvents:none`），光标靠近 frame 底部（`clientY ≥ rect.bottom - 56`）或与把手交互时重新亮起并重置计时。
-- **面板顶部小横杠（拖拽条）** = 拖动调高 + 点击收起：`onPointerDown` 里位移 `≤5px` 视为轻点，`onUp` 里未拖动则触发 `onMinimize()`（等同 `−`，保留会话）；超过 5px 才算拖动并 `onResize`。`title`/`aria-label` 提示「点击收起 · 拖动调整高度」。
+- **面板顶部拖拽条（细线 + 悬停显形）** = 拖动调高 + 点击收起：`onPointerDown` 里位移 `≤5px` 视为轻点，`onUp` 里未拖动则触发 `onMinimize()`（等同 `−`，保留会话）；超过 5px 才算拖动并 `onResize`。`title`/`aria-label` 提示「点击收起 · 拖动调整高度」。
+  - **视觉与命中区解耦**（学官方 `ui-layout` 的 `.handle`：8px 全透明命中区 + 0.5px 列边框）：容器恒为 **9px 高、全透明**，`cursor:row-resize`、`touchAction:none`；里面两根元素——**1px 边界线**（静态 `palette.border`）+ **42×4 圆角把手**（静态 `fg2` α0.18）。
+  - **悬停 / 拖拽中**（`barHot = barHover || barActive`）：线变 `accent` α0.75，把手亮到 α0.55 并加宽到 56（150ms 过渡）。这就是"静态干净、靠近就告诉你能抓"。
+  - **纯触摸端**（`prefersNoHover()` = `matchMedia('(hover: none)')`）没有 hover，把手**常驻 α0.35**，否则细线无从发现。
+  - 面板自身**不再有 `borderTop`**：顶部那根 1px 线就是边界，否则会叠成 2px。
 - **铺满 ⛶**：`maximized` 是**全局**态（不随会话变）。`toggleMaximize()` 把 `H` 设为 `getFrame().clientHeight - 2` 并记住 `restoreHRef = 上一次 H`；再点还原。`onResize`（拖拽条）里 `setMaximized(false)`——手动拖高度即退出铺满。图标是内联 SVG（向外/向内四角括号），不依赖字体字形。
 
 ### 4.3 布局测量
