@@ -123,7 +123,7 @@ if (rejection !== undefined) { rejectUpgrade(socket, rejection); return }
 - 压缩对话区：给 `center` 列设 `padding-bottom = (shown ? H : HANDLE_STRIP_H)`（`useEffect` 依赖 `[shown, H]`）——终端展开时用面板高度 H；收起态**常驻**预留 `HANDLE_STRIP_H`（8px）横条（不挡输出统计），常驻预留**没有显隐跳动**（对比此前「显时预留/隐时置 0」的条件做法）。该横条会让对话滚动容器略微变矮，故把对话消息滚动条改为**只显示滑块、透明轨道**（`CONV_SCROLL_CSS`，施加于 `.Md3f7G_scroll, .wSkVaW_scrollBody`，二者为 dsh 当前构建的 module-scoped 哈希类名），底部空隙不再露出「轨道缺失」。**关键**：类选择器列表里的每个 `::-webkit-scrollbar-*` 选择器必须各自带上伪元素后缀（用 `CONV_SCROLL_PSEUDO` 逐个子选择器拼接），否则逗号会拆出「整段元素」选择器（如 `.Md3f7G_scroll{width:8px}`）把容器压成 8px 宽。
 - 底部入口是 `FloatOpenButton`：一根 **iOS 主屏指示条风格的半透明横杠**（`left=sidebar / right=details`，位于底部预留横条内、离底边约 2px），**上滑**（或轻点/回车）**打开**终端；挂起态用品牌色点亮、普通态用次级文字色压暗。定位容器 `pointerEvents:none` 不拦截对话内容，只有横杠本体（156×5 触摸区）接收指针事件。为避免挡住 dsh 输出统计，**3 秒无操作自动淡出**（`opacity` + `pointerEvents:none`），光标靠近 frame 底部（`clientY ≥ rect.bottom - 56`）或与把手交互时重新亮起并重置计时。
 - **面板顶部拖拽条（细线 + 悬停显形）** = 拖动调高 + 点击收起：`onPointerDown` 里位移 `≤5px` 视为轻点，`onUp` 里未拖动则触发 `onMinimize()`（等同 `−`，保留会话）；超过 5px 才算拖动并 `onResize`。`title`/`aria-label` 提示「点击收起 · 拖动调整高度」。
-  - **视觉与命中区解耦**（学官方 `ui-layout` 的 `.handle`：8px 全透明命中区 + 0.5px 列边框）：容器恒为 **9px 高、全透明**，`cursor:row-resize`、`touchAction:none`；里面两根元素——**1px 边界线**（静态 `palette.border`）+ **42×4 圆角把手**（静态 `fg2` α0.18）。
+  - **视觉与命中区解耦**（学官方 `ui-layout` 的 `.handle`：8px 全透明命中区 + 0.5px 列边框）：容器恒为 **8px 高、全透明**，`cursor:row-resize`、`touchAction:none`（8px = 原 7px 条 + 1px `borderTop`，**下面标签栏零位移**）；里面两根元素——**1px 边界线**（静态 `palette.border`）+ **42×4 圆角把手**（静态 `fg2` α0.18）。
   - **悬停 / 拖拽中**（`barHot = barHover || barActive`）：线变 `accent` α0.75，把手亮到 α0.55 并加宽到 56（150ms 过渡）。这就是"静态干净、靠近就告诉你能抓"。
   - **纯触摸端**（`prefersNoHover()` = `matchMedia('(hover: none)')`）没有 hover，把手**常驻 α0.35**，否则细线无从发现。
   - 面板自身**不再有 `borderTop`**：顶部那根 1px 线就是边界，否则会叠成 2px。
@@ -131,8 +131,9 @@ if (rejection !== undefined) { rejectUpgrade(socket, rejection); return }
 
 ### 4.3 布局测量
 - `getOverlayLayer()` = `document.querySelector('[data-shell-overlay]')`；其 `.parentElement` 即 AppFrame。
-- `parseGrid(frame)` 解析 `frame.style.gridTemplateColumns`（形如 `"280px minmax(0,1fr) 0px"`）得到 `{sidebar, details}`，用于把终端面板 `left=sidebar / right=details` 精确对齐 center 列。
+- `parseGrid(frame)` 解析 `frame.style.gridTemplateColumns`（形如 `"280px minmax(0,1fr) 0px"`）得到 `{sidebar, details}`，用于把终端面板 `left=sidebar / right=details` 精确对齐 center 列。读的是**内联样式的目标值**（不是动画中途的 rect），所以列宽一变就立刻对齐到终值。
 - `getCenterCol(frame)` = `frame.children[1]`（DOM 顺序：sidebar, center, details, overlay, handles）。
+- **两个触发源缺一不可（踩过）**：`useFrameMetrics` 同时挂 `ResizeObserver`（窗口/框架尺寸变化）**和** `MutationObserver`（`attributes`，只盯 frame 自身的 `style` 与 `data-*rightbar*/sidebar*`）。原因：**列宽变化只改 frame 的 `style.gridTemplateColumns`，frame 自身外框尺寸不变 → ResizeObserver 不会触发**。少了 MO，展开/收起右侧栏（或折叠左栏、拖侧栏）后面板会停在旧列宽上：面板压到右侧栏下面、中间那根把手也不在当前可见区的中心（用户报的"偏移/没居中"）。MO **不要设 `subtree`**，否则我们自己给 center 列设的 `paddingBottom` 会把观察器叫醒；`measure()` 里做「值没变就不换新对象」的空转保护。
 
 ### 4.4 明暗自适应
 - `buildPalette()`：`dark = document.body.hasAttribute('data-ds-dark-theme')`；再用 `getComputedStyle(body).getPropertyValue('--dsw-*')` 读真实 token（`--dsw-alias-bg-base/label-primary/label-secondary/brand-primary/border-l2`），缺失用各自 fallback。

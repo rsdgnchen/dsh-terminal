@@ -300,7 +300,16 @@ window.__ModuleLoader__.load({
       return kids && kids.length >= 2 ? kids[1] : null
     }
 
-    // 测量并把列宽放进 state（依赖 ResizeObserver 跟随拖拽变化）
+    // 测量并把列宽放进 state。
+    //
+    // 两个触发源缺一不可：
+    //   1) ResizeObserver：窗口/框架整体尺寸变化；
+    //   2) MutationObserver：**列宽变化**（拖左右侧栏、折叠左栏、展开/收起右侧栏）
+    //      只改 frame 的 `style.gridTemplateColumns`，frame 自身外框尺寸不变 →
+    //      ResizeObserver 根本不会触发。少了 (2)，面板会停在旧列宽：右侧栏展开时
+    //      面板压到它下面、中间那根把手也就不在当前可见区的中心（"偏移/没居中"）。
+    // 注意：只观察 frame 自身属性（不设 subtree），否则我们自己给 center 列设的
+    // paddingBottom 会把观察器叫醒，形成无谓的测量循环。
     function useFrameMetrics() {
       const [metrics, setMetrics] = useState({ sidebar: 280, details: 0 })
       const [frame, setFrame] = useState(null)
@@ -311,14 +320,27 @@ window.__ModuleLoader__.load({
           if (!f) return
           setFrame(f)
           setCenter(getCenterCol(f))
-          setMetrics(parseGrid(f))
+          const next = parseGrid(f)
+          // 值没变就不换新对象，避免观察器回调 → 渲染 → 再回调的空转。
+          setMetrics((prev) => (prev.sidebar === next.sidebar && prev.details === next.details ? prev : next))
         }
         measure()
         const el = getFrame()
         if (!el) return
         const ro = new ResizeObserver(() => measure())
         ro.observe(el)
-        return () => ro.disconnect()
+        const mo = new MutationObserver(() => measure())
+        mo.observe(el, {
+          attributes: true,
+          attributeFilter: [
+            'style',
+            'data-sidebar-collapsed',
+            'data-rightbar-collapsed',
+            'data-rightbar-instant',
+            'data-rightbar-fullscreen',
+          ],
+        })
+        return () => { ro.disconnect(); mo.disconnect() }
       }, [])
       return { metrics, frame, center }
     }
@@ -706,7 +728,8 @@ window.__ModuleLoader__.load({
         //   静态 = 1px 细线（面板边界色，安静不吵）；
         //   鼠标进入 / 拖拽中 = 线亮成品牌色 + 中间把手浮出并加宽（可发现性）；
         //   纯触摸端没有 hover，故把手常驻淡显。
-        // 命中区仍是 9px 高（比原来的 7px 条还大），并保留「点击收起」。
+        // 命中区 8px 高（= 原来 7px 条 + 1px borderTop 的总高，**下面标签栏一像素都不位移**），
+        // 并保留「点击收起」。
         React.createElement('div', {
           key: 'bar', onPointerDown: onPointerDown,
           onPointerEnter: () => setBarHover(true),
@@ -714,7 +737,7 @@ window.__ModuleLoader__.load({
           title: lang() === 'en' ? 'Click to collapse · drag to resize' : '点击收起 · 拖动调整高度',
           'aria-label': t('minimize'),
           style: {
-            flex: 'none', height: 9, position: 'relative', cursor: 'row-resize', touchAction: 'none',
+            flex: 'none', height: 8, position: 'relative', cursor: 'row-resize', touchAction: 'none',
             background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
           },
         }, [
